@@ -1,0 +1,10 @@
+*.log
+*.tgz
+.DS_Store
+.env*
+checksums.txt
+coverage/
+dist/
+node_modules/
+playwright-report/
+test-results/

@@ -1,0 +1,159 @@
+import { fileURLToPath } from 'node:url'
+process.chdir(fileURLToPath(new URL('..', import.meta.url)))
+import { build } from 'esbuild'
+import { chromium } from 'playwright'
+import { createServer } from 'node:http'
+import { existsSync } from 'node:fs'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import assert from 'node:assert/strict'
+import { runSettingsSlotsRegression } from './test-settings-slots.mjs'
+const result = await build({
+  entryPoints: ['tests/browser-fixture.tsx'],
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'es2022',
+  write: false,
+})
+const html = await readFile('tests/browser-fixture.html', 'utf8')
+const server = createServer((req, res) => {
+  if (req.url === '/favicon.ico') {
+    res.writeHead(204)
+    res.end()
+    return
+  }
+  res.setHeader(
+    'content-type',
+    req.url === '/fixture.js' ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8',
+  )
+  res.end(req.url === '/fixture.js' ? result.outputFiles[0].contents : html)
+})
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const executablePath =
+  process.env.CHROME_PATH ||
+  (process.platform === 'darwin' && existsSync(macChrome) ? macChrome : undefined)
+let browser
+const checks = [],
+  errors = []
+try {
+  browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
+  const page = await browser.newPage({
+    viewport: { width: 1100, height: 900 },
+    reducedMotion: 'reduce',
+  })
+  page.setDefaultTimeout(10000)
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto(`http://127.0.0.1:${server.address().port}`)
+  const banner = page.getByRole('region', { name: '会话回顾' })
+  await banner.waitFor({ state: 'visible' })
+  checks.push('Chinese compact recap renders')
+  await mkdir('test-results/screenshots', { recursive: true })
+  await banner.screenshot({ path: 'test-results/screenshots/preview-banner.png' })
+  assert.equal(await page.getByRole('region', { name: '会话回顾', exact: true }).count(), 1)
+  assert.doesNotMatch(await banner.innerText(), /最近请求|上次回复|会话标题|上下文占用|模型耗时/)
+  assert.match(await banner.innerText(), /执行灰度环境回归/)
+  assert.equal(await banner.locator('.dshr-card').count(), 0)
+  assert.equal(await banner.evaluate((e) => getComputedStyle(e).borderTopWidth), '0px')
+  assert.match(await banner.innerText(), /recap/)
+  checks.push('One compact text recap, without a card or duplicate content')
+  await page.setViewportSize({ width: 390, height: 844 })
+  const preview = banner.locator('.dshr-summary')
+  const collapsed = await preview.evaluate((element) => ({
+    height: element.getBoundingClientRect().height,
+    line: parseFloat(getComputedStyle(element).lineHeight),
+    full: element.scrollHeight,
+  }))
+  assert.ok(collapsed.height <= collapsed.line * 3 + 1)
+  assert.ok(collapsed.full > collapsed.height)
+  await banner.getByRole('button', { name: '展开', exact: false }).click()
+  assert.equal(
+    await banner.getByRole('button', { name: '收起', exact: false }).getAttribute('aria-expanded'),
+    'true',
+  )
+  assert.ok(
+    (await preview.evaluate((element) => element.getBoundingClientRect().height)) >
+      collapsed.height,
+  )
+  await banner.getByRole('button', { name: '收起', exact: false }).click()
+  checks.push('Three-line preview expands and collapses without duplicating text')
+  assert.ok(Array.from(await preview.innerText()).length <= 400)
+  await page.setViewportSize({ width: 1100, height: 900 })
+  checks.push('Character-bounded recap wraps to the chat width')
+  await page.screenshot({ path: 'test-results/screenshots/preview-light.png', fullPage: true })
+  await page.getByLabel('几分钟没操作后回顾', { exact: true }).fill('5')
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await page.getByText('已保存，即时生效', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '重新读取', exact: true }).count(), 0)
+  checks.push('Settings use one primary save action')
+  const save = await page.evaluate(() =>
+    window.recapTest.calls.filter((call) => call.route === 'save-settings').at(-1),
+  )
+  assert.deepEqual(save.body.patch, { idleMinutes: 5 })
+  assert.equal(save.body.revision, 0)
+  checks.push('Only changed fields and expected revision are submitted')
+  await page.evaluate(() => window.recapTest.conflict())
+  await page.getByLabel('几分钟没操作后回顾', { exact: true }).fill('17')
+  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+  await page.getByRole('alert').waitFor()
+  assert.equal(await page.getByLabel('几分钟没操作后回顾', { exact: true }).inputValue(), '17')
+  checks.push('Revision conflict retains the user draft')
+  await page.getByRole('button', { name: '重新读取', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('#dshr-setting-idleMinutes')?.value === '5',
+  )
+  checks.push('Explicit reload discards the conflicting draft')
+  await page.evaluate(() => window.recapTest.locale('en'))
+  await page.getByRole('heading', { name: 'Recap', exact: true }).waitFor()
+  await page.evaluate(() => window.recapTest.show())
+  const english = page.getByRole('region', { name: 'Recap', exact: true })
+  await english.waitFor({ state: 'visible' })
+  checks.push('Live language switching works')
+  await page.evaluate(() => document.documentElement.classList.add('dark'))
+  await page.screenshot({ path: 'test-results/screenshots/preview-dark.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  assert.equal(await page.getByRole('region', { name: 'Recap', exact: true }).count(), 1)
+  assert.equal(
+    await english
+      .locator('.dshr-summary')
+      .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    true,
+  )
+  await page.screenshot({ path: 'test-results/screenshots/preview-mobile.png', fullPage: true })
+  checks.push('Narrow-screen layout has no horizontal overflow')
+  await page.evaluate(() => window.recapTest.unavailable())
+  await english.waitFor({ state: 'detached' })
+  await page.waitForTimeout(2200)
+  assert.doesNotMatch(
+    await page.locator('main').innerText(),
+    /not loaded yet|nothing to recap|暂无可回顾|会话尚未加载/,
+  )
+  checks.push('Loading sessions and background API errors stay quiet')
+  await page.evaluate(() => window.recapTest.showAuto())
+  await english.waitFor({ state: 'visible' })
+  assert.equal(await english.count(), 1)
+  await page.evaluate(() => window.recapTest.continue())
+  await english.waitFor({ state: 'detached' })
+  checks.push('Continuing conversation removes the automatic recap')
+  await page.evaluate(() => window.recapTest.unmount())
+  await page.waitForTimeout(150)
+  const count = await page.evaluate(() => window.recapTest.calls.length)
+  await page.waitForTimeout(2300)
+  assert.equal(await page.evaluate(() => window.recapTest.calls.length), count)
+  checks.push('Unmount stops timers and network polling')
+  assert.deepEqual(errors, [])
+  checks.push('No uncaught browser errors')
+  await mkdir('test-results', { recursive: true })
+  await writeFile(
+    'test-results/browser.json',
+    JSON.stringify({ browser: browser.version(), checks, count: checks.length, errors }, null, 2),
+  )
+  console.log(`Browser checks passed: ${checks.length} (${browser.version()})`)
+  for (const check of checks) console.log(`  ✓ ${check}`)
+} finally {
+  await browser?.close()
+  server.closeAllConnections()
+  await new Promise((resolve) => server.close(resolve))
+}
+await runSettingsSlotsRegression()

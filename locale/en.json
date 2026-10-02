@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Session Recap",
+    "description": "Brief current-session recaps in the chat, requested with /recap or shown after visible idle time. Model context is unchanged by default."
+  }
+}
