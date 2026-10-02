@@ -16,9 +16,9 @@
 
 Returning to a long conversation should not mean rereading every message. Run `/recap` to get a brief summary of the current task and its progress.
 
-![Feature demonstration: resume a notes app task with a brief recap](docs/assets/recap-demo.png)
+![Feature demonstration: resume a notes app task with a brief recap](docs/assets/recap-demo-en.png)
 
-_Illustrative demo with fictional content, shown in Chinese._
+_Illustrative demo with fictional content._
 
 - **On demand or while idle.** Request a recap yourself, or let it appear after three minutes without activity in the visible session.
 - **Brief, with room to expand.** About 160 characters by default, with a three-line preview and an expand control for longer results.
@@ -66,7 +66,7 @@ The submitted command clears immediately while generation continues. A new draft
 
 Open `/recap settings` to adjust triggers without leaving the conversation. Edits save automatically.
 
-![Settings overview: automatic saving, idle triggers, model choice and recap length](docs/assets/recap-settings-demo.png)
+![Settings overview: automatic saving, idle triggers, model choice and recap length](docs/assets/recap-settings-demo-en.png)
 
 _Illustrated settings overview; defaults and generation budgets are listed below._
 
