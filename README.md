@@ -4,7 +4,7 @@
 
 [简体中文](README.zh-CN.md) · [Configuration](docs/配置说明.md) · [Repository](https://github.com/lolipop-1x1/dsh-recap)
 
-An unofficial current-session recap plugin for **DeepSeek Harness 0.2.0-rc.2**. A quiet `›_ recap ·` text row in the chat summarizes the task, observed progress and recorded next step. It defaults to a 400-character limit and a three-line preview, with expand/collapse for the full text. It is not cross-session memory and does not modify the main model context by default.
+An unofficial current-session recap plugin for **DeepSeek Harness 0.2.0-rc.2**. A quiet `›recap ·` text row in the chat summarizes the task, observed progress and recorded next step. It defaults to a 400-character limit and a three-line preview, with expand/collapse for the full text. It is not cross-session memory and does not modify the main model context by default.
 
 ## Install
 

@@ -25,7 +25,7 @@ export function RecapText({
         onClick={() => setExpanded(!expanded)}
       >
         <span className="dshr-recap-prefix" aria-hidden="true">
-          ›_ recap ·
+          ›recap ·
         </span>
         <span id={id} className="dshr-summary" data-expanded={expanded}>
           {facts && <span className="dshr-kind">{t(language, 'facts')} · </span>}

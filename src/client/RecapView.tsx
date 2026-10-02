@@ -23,7 +23,7 @@ export function RecapView({
   if (state.status === 'queued' || state.status === 'generating')
     return (
       <p className="dshr-command-note" role="status">
-        ›_ recap · {t(language, 'generating')}
+        ›recap · {t(language, 'generating')}
       </p>
     )
   const recap = state.recap
