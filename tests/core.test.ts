@@ -226,6 +226,134 @@ describe('prompt construction', () => {
     expect(result.system).toContain('one or two short sentences')
     f.engine.dispose()
   })
+  it('retains checkpoint-only evidence when the checkpoint exceeds the source budget', () => {
+    const config = resolveConfig({ maxSourceChars: 1000 })
+    const facts = deriveFacts(
+      's',
+      {
+        ...initialState(),
+        checkpoint: {
+          id: 'c',
+          text: 'Release requirements and next action. '.repeat(50),
+          seq: 1,
+          time: 1,
+        },
+      },
+      config,
+    )
+    const { input } = buildPrompt(facts, config, 'en')
+    expect(input.length).toBeLessThanOrEqual(config.maxSourceChars)
+    expect(JSON.parse(input).checkpoint).toContain('Release requirements')
+  })
+  it('retains structured goals and todos when they exceed the source budget', () => {
+    const config = resolveConfig({ maxSourceChars: 1000 })
+    const facts = deriveFacts('s', initialState(), config, {
+      goal: {
+        objective: 'Complete a release plan. '.repeat(30),
+        phase: 'blocked',
+        blockedReason: { message: 'Awaiting approval' },
+      },
+      todos: Array.from({ length: 6 }, (_, i) => ({
+        content: `Task ${i}: ` + 'Verify everything. '.repeat(14),
+        status: 'pending',
+      })),
+    })
+    const { input } = buildPrompt(facts, config, 'en')
+    const data = JSON.parse(input)
+    expect(input.length).toBeLessThanOrEqual(config.maxSourceChars)
+    expect(data.goal).toContain('Complete a release plan')
+    expect(data.goalPhase).toBe('blocked')
+    expect(data.blockedReason).toBe('Awaiting approval')
+    expect(data.todos[0]).toMatchObject({
+      text: expect.stringContaining('Task 0'),
+      status: 'pending',
+    })
+  })
+  it.each(['latestRequest', 'latestResponse', 'goal', 'todos', 'checkpoint'] as const)(
+    'preserves %s evidence with escaped Unicode under the minimum source budget',
+    (source) => {
+      const config = resolveConfig({ maxSourceChars: 1000 })
+      const facts = deriveFacts('s', initialState(), config)
+      const text = 'Verify 😀\\"\n'.repeat(180)
+      if (source === 'todos') facts.todos = [{ text, status: 'in_progress' }]
+      else if (source === 'checkpoint') facts.checkpoint = { id: 'c', text, seq: 1, time: 1 }
+      else facts[source] = text
+      const { input } = buildPrompt(facts, config, 'en')
+      const data = JSON.parse(input)
+      const retained = source === 'todos' ? data.todos?.[0]?.text : data[source]
+      expect(input.length).toBeLessThanOrEqual(config.maxSourceChars)
+      expect(retained).toContain('Verify 😀')
+      expect(retained.isWellFormed()).toBe(true)
+    },
+  )
+  it.each([1000, 1001, 2000, 6000])(
+    'keeps every evidence category and sanitization with a %i-character budget',
+    (maxSourceChars) => {
+      const config = resolveConfig({ maxSourceChars })
+      const facts = deriveFacts('s', initialState(), config)
+      const text =
+        'Keep 😀\\"\n password="synthetic-private-value" ' + 'evidence 😀\\"\n'.repeat(300)
+      Object.assign(facts, {
+        latestRequest: text,
+        latestResponse: text,
+        title: text,
+        goal: text,
+        goalPhase: 'blocked',
+        goalBlockedReason: text,
+        todos: Array.from({ length: 12 }, () => ({ text, status: 'in_progress' })),
+        errors: Array.from({ length: 3 }, () => ({
+          text,
+          kind: 'interrupted',
+          turn: 1,
+          seq: 1,
+          time: Number.MAX_SAFE_INTEGER,
+        })),
+        messages: [{ text, role: 'assistant', turn: 1, seq: 1, time: 1 }],
+        checkpoint: { id: 'c', text, seq: 1, time: 1 },
+      })
+      const before = structuredClone(facts)
+      const { input } = buildPrompt(facts, config, 'en')
+      const data = JSON.parse(input)
+      expect(input.length).toBeLessThanOrEqual(config.maxSourceChars)
+      expect(input).not.toContain('synthetic-private-value')
+      for (const value of [
+        data.latestRequest,
+        data.latestResponse,
+        data.title,
+        data.goal,
+        data.blockedReason,
+        data.checkpoint,
+        data.todos?.[0]?.text,
+        data.historicalErrors?.[0]?.text,
+        data.recentMessages?.[0]?.text,
+      ]) {
+        expect(value).toContain('Keep 😀')
+        expect(value.isWellFormed()).toBe(true)
+      }
+      expect(data.goalPhase).toBe('blocked')
+      expect(data.todos[0].status).toBe('in_progress')
+      expect(data.historicalErrors[0].kind).toBe('interrupted')
+      expect(data.recentMessages[0].role).toBe('assistant')
+      expect(facts).toEqual(before)
+    },
+  )
+  it('redacts an entire checkpoint credential before shortening it', () => {
+    const config = resolveConfig({ maxSourceChars: 1000 })
+    const facts = deriveFacts('s', initialState(), config)
+    facts.checkpoint = {
+      id: 'c',
+      seq: 1,
+      time: 1,
+      text:
+        'Release review.\n-----BEGIN PRIVATE KEY-----\n' +
+        'synthetic-private-value'.repeat(200) +
+        '\n-----END PRIVATE KEY-----',
+    }
+    const { input } = buildPrompt(facts, config, 'en')
+    expect(input.length).toBeLessThanOrEqual(config.maxSourceChars)
+    expect(input).not.toContain('synthetic-private-value')
+    expect(JSON.parse(input).checkpoint).toBe('Release review.\n[REDACTED PRIVATE KEY]')
+  })
   it('does not reclassify historical errors as active blockers', () => {
     const f = fixture()
     const s = f.add()

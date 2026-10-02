@@ -101,10 +101,28 @@ const api = createApi(async (input, init) => {
     config = resolveConfig({ ...config, ...(body.patch as object) })
     revision++
     data = settings()
-  } else if (route === 'dismiss') data = engine.dismiss('browser-session')
-  else if (route === 'refresh')
-    data = await engine.request('browser-session', 'manual', { force: true })
-  else data = engine.state('browser-session')
+    engine.syncConfig()
+  } else if (route === 'presence') {
+    data = engine.presence(String(body.sessionId), {
+      clientId: String(body.clientId),
+      sequence: Number(body.sequence),
+      visible: body.visible === true,
+      active: body.active === true,
+      open: body.open === true,
+      closed: body.closed === true,
+      locale: typeof body.locale === 'string' ? body.locale : undefined,
+    })
+  } else if (route === 'dismiss') data = engine.dismiss(String(body.sessionId))
+  else if (route === 'refresh') {
+    const sessionId = String(body.sessionId)
+    engine.state(sessionId)
+    engine.background(sessionId, 'manual', true)
+    data = engine.state(sessionId)
+  } else
+    data = engine.state(
+      String(body.sessionId),
+      typeof body.clientId === 'string' ? body.clientId : undefined,
+    )
   return Response.json({ ok: true, data })
 })
 const loadModels = async () => ({

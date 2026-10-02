@@ -31,7 +31,8 @@ export class Presence {
       visible: message.visible && !message.closed,
       seen: now,
       closed: message.closed === true,
-      hiddenThrough: message.open ? presentation : (old?.hiddenThrough ?? -1),
+      // Any first report can overtake open. Initialize once; retries must not hide newer recaps.
+      hiddenThrough: old?.hiddenThrough ?? presentation,
     })
     if (message.visible && (message.active || message.open)) this.activity(now)
     this.isVisible(now)

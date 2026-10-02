@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { RecapError, type RecapConfig, type Language } from '../core/config.js'
@@ -41,13 +42,12 @@ export async function generate(
   const llm = ctx.get('llm')
   if (!agent || !llm)
     throw new RecapError('MODEL_UNAVAILABLE', 'No model service is available.', 503)
+  const pending = ctx.sessionProjections.stateOf(agent.session, 'modelSelection')?.pending
   const header = agent.session.requestHeader()?.config
   const route =
     config.provider && config.model
       ? config
-      : header?.provider && header.model
-        ? header
-        : agent.options
+      : (pending ?? (header?.provider && header.model ? header : agent.options))
   const { provider, model } = route
   if (!provider || !model)
     throw new RecapError('MODEL_UNAVAILABLE', 'This session has no model route.', 503)

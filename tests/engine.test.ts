@@ -307,6 +307,115 @@ it('merges manual and idle generation into one presented recap', async () => {
   expect(state.hidden).toBe(false)
   expect(f.generate).toHaveBeenCalledTimes(1)
 })
+describe.each(['autoEnabled', 'onIdle'] as const)('disabling %s', (setting) => {
+  it.each([
+    { queued: false, manualFirst: false },
+    { queued: true, manualFirst: false },
+    { queued: false, manualFirst: true },
+    { queued: true, manualFirst: true },
+  ])(
+    'preserves manual consumers of shared work (queued: $queued, manual first: $manualFirst)',
+    async ({ queued, manualFirst }) => {
+      const f = setup({ maxConcurrent: 1 })
+      f.add()
+      f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+      const wait = deferred<ModelResult>()
+      f.generate.mockImplementation(() => wait.promise)
+      let blocker: ReturnType<typeof f.engine.request> | undefined
+      if (queued) {
+        f.add('blocker')
+        blocker = f.engine.request('blocker', 'manual')
+        await flush()
+      }
+      const original = f.engine.request('session-1', manualFirst ? 'manual' : 'idle')
+      await flush()
+      const joined = f.engine.request('session-1', manualFirst ? 'idle' : 'manual')
+      f.setConfig({ [setting]: false })
+      expect(f.engine.state('session-1').status).toBe(queued ? 'queued' : 'generating')
+      wait.resolve(result())
+      const [state, shared] = await Promise.all([original, joined, blocker])
+      expect(state.recap?.text).toBe('A complete recap.')
+      expect(shared.recap?.id).toBe(state.recap?.id)
+      expect(
+        f.generate.mock.calls.filter(([facts]) => facts.sessionId === 'session-1'),
+      ).toHaveLength(1)
+      expect(f.engine.inspect()).toMatchObject({ active: 0, queued: 0 })
+    },
+  )
+  it.each([false, true])(
+    'cancels work with only automatic consumers (queued: %s)',
+    async (queued) => {
+      const f = setup({ maxConcurrent: 1 })
+      f.add()
+      f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+      const wait = deferred<ModelResult>()
+      f.generate.mockImplementation(() => wait.promise)
+      let blocker: ReturnType<typeof f.engine.request> | undefined
+      if (queued) {
+        f.add('blocker')
+        blocker = f.engine.request('blocker', 'manual')
+        await flush()
+      }
+      const automatic = f.engine.request('session-1', 'idle')
+      await flush()
+      f.setConfig({ [setting]: false })
+      expect((await automatic).error).toBe('CANCELLED')
+      if (!queued) expect(f.generate.mock.calls[0]?.[3].aborted).toBe(true)
+      wait.resolve(result())
+      await blocker
+      await flush()
+      expect(f.engine.state('session-1').recap).toBeNull()
+      expect(
+        f.generate.mock.calls.filter(([facts]) => facts.sessionId === 'session-1'),
+      ).toHaveLength(queued ? 0 : 1)
+      expect(f.engine.inspect()).toMatchObject({ active: 0, queued: 0 })
+    },
+  )
+  it('cancels shared work only when its final manual consumer leaves after automatic work is disabled', async () => {
+    const f = setup()
+    f.add()
+    f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+    const wait = deferred<ModelResult>()
+    f.generate.mockImplementationOnce(() => wait.promise)
+    const automatic = f.engine.request('session-1', 'idle')
+    const controllers = [new AbortController(), new AbortController()]
+    const consumers = controllers.map((controller) =>
+      f.engine
+        .request('session-1', 'manual', { signal: controller.signal })
+        .catch((error) => error.code),
+    )
+    await flush()
+    f.setConfig({ [setting]: false })
+    expect(f.generate.mock.calls[0]?.[3].aborted).toBe(false)
+    controllers[0]!.abort()
+    expect(await consumers[0]).toBe('CANCELLED')
+    expect(f.generate.mock.calls[0]?.[3].aborted).toBe(false)
+    controllers[1]!.abort()
+    expect(await consumers[1]).toBe('CANCELLED')
+    expect((await automatic).error).toBe('CANCELLED')
+    expect(f.generate.mock.calls[0]?.[3].aborted).toBe(true)
+    wait.resolve(result('obsolete'))
+    await flush()
+    expect(f.engine.state('session-1').recap).toBeNull()
+    expect(f.engine.inspect().active).toBe(0)
+  })
+  it('still invalidates shared work when content settings change at the same time', async () => {
+    const f = setup()
+    f.add()
+    f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+    const wait = deferred<ModelResult>()
+    f.generate.mockImplementationOnce(() => wait.promise)
+    const automatic = f.engine.request('session-1', 'idle')
+    const manual = f.engine.request('session-1', 'manual')
+    await flush()
+    f.setConfig({ [setting]: false, language: 'en' })
+    expect((await manual).error).toBe('CANCELLED')
+    expect((await automatic).error).toBe('CANCELLED')
+    wait.resolve(result('obsolete'))
+    await flush()
+    expect(f.engine.state('session-1').recap).toBeNull()
+  })
+})
 it('hides an automatic preview when leaving and does not show it again on opening', async () => {
   const f = setup()
   f.add()

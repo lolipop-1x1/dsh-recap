@@ -46,6 +46,10 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.goto(`http://127.0.0.1:${server.address().port}`)
   const banner = page.getByRole('region', { name: '会话回顾' })
+  await page.waitForFunction(() => window.recapTest?.calls.some((call) => call.route === 'state'))
+  assert.equal(await banner.count(), 0)
+  checks.push('Opening a page and polling after presence initialization keep cached recap hidden')
+  await page.evaluate(() => window.recapTest.show())
   await banner.waitFor({ state: 'visible' })
   assert.equal(await page.getByRole('dialog').count(), 0)
   checks.push('Historical settings command does not open a dialog')
@@ -208,6 +212,50 @@ try {
   checks.push('Closing and remounting the same settings command does not reopen the dialog')
   checks.push(
     'New settings command opens the dialog directly without a launch button; immediate close saves changes and Escape closes it',
+  )
+  await page.getByRole('button', { name: 'Run settings command', exact: true }).click()
+  await dialog.waitFor({ state: 'visible' })
+  await page.evaluate(() => window.recapTest.conflict())
+  await dialog.getByLabel('Idle threshold (minutes)', { exact: true }).fill('9')
+  await dialog.getByRole('alert').waitFor()
+  await dialog.getByRole('button', { name: 'Reload', exact: true }).click()
+  await dialog.getByRole('alert').waitFor({ state: 'hidden' })
+  const savesAfterConflict = await page.evaluate(
+    () => window.recapTest.calls.filter((c) => c.route === 'save-settings').length,
+  )
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Run settings command', exact: true }).click()
+  await dialog.waitFor({ state: 'visible' })
+  assert.equal(
+    await dialog.getByLabel('Idle threshold (minutes)', { exact: true }).inputValue(),
+    '9',
+  )
+  await dialog.getByLabel('Idle threshold (minutes)', { exact: true }).fill('10')
+  await dialog.getByRole('heading', { name: 'Recap', exact: true }).click()
+  await page.waitForTimeout(600)
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  assert.equal(
+    await page.evaluate(
+      () => window.recapTest.calls.filter((c) => c.route === 'save-settings').length,
+    ),
+    savesAfterConflict,
+  )
+  await page.getByRole('button', { name: 'Run settings command', exact: true }).click()
+  await dialog.waitFor({ state: 'visible' })
+  await dialog.getByRole('button', { name: 'Retry save', exact: true }).click()
+  await dialog.getByText('Saved; active immediately', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.recapTest.calls.filter((c) => c.route === 'save-settings').length,
+    ),
+    savesAfterConflict + 1,
+  )
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  checks.push(
+    'Conflict drafts stay blocked through reload, close, remount, edit and blur until Retry',
   )
   await page.evaluate(() => window.recapTest.unavailable())
   await english.waitFor({ state: 'detached' })
