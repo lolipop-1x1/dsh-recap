@@ -113,12 +113,13 @@ export async function runSettingsSlotsRegression() {
     await page.waitForFunction(() => window.settingsSlotsTest.snapshot().pending)
     await page.evaluate(() => window.settingsSlotsTest.unloadPlugin())
     await page.locator('.dshr-settings').waitFor({ state: 'detached' })
-    await page.waitForFunction(() => window.settingsSlotsTest.snapshot().aborted === 1)
+    await page.evaluate(() => window.settingsSlotsTest.finishSave())
+    await page.waitForFunction(() => window.settingsSlotsTest.snapshot().value === 19)
     const unloaded = await state()
     assert.equal(unloaded.entries, 0)
     assert.equal(unloaded.styles, 0)
     assert.equal(unloaded.pending, false)
-    assert.equal(unloaded.value, 17)
+    assert.equal(unloaded.value, 19)
     assert.equal(unloaded.localeListeners, 1) // Only the fixture's menu remains subscribed.
     await page.evaluate(() => window.settingsSlotsTest.language('en'))
     const afterLocale = await state()
@@ -127,7 +128,7 @@ export async function runSettingsSlotsRegression() {
     assert.equal(afterLocale.reads, 1)
     assert.equal(afterLocale.saves, 4)
     checks.push(
-      'Plugin unload removes slots, styles and the Settings locale subscription, and aborts a pending save',
+      'Plugin unload removes slots, styles and the Settings locale subscription, and lets the accepted settings save finish',
     )
 
     await page.evaluate(() => window.settingsSlotsTest.dispose())

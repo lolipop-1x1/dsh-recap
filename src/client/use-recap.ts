@@ -5,7 +5,7 @@ import type { Route } from '../core/api.js'
 import type { ApiClient } from './api.js'
 export function useRecap(api: ApiClient, sessionId: string, language: Language) {
   const [state, setState] = useState<ViewState | null>(null)
-  const identity = useRef({ id: createClientId(), sequence: 0 })
+  const identity = useRef(getPageIdentity())
   useEffect(() => {
     let alive = true,
       issued = 0,
@@ -45,7 +45,7 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
       if (!visible() || polling) return
       polling = true
       try {
-        await send('state', { sessionId })
+        await send('state', { sessionId, clientId: identity.current.id })
       } finally {
         polling = false
       }
@@ -69,7 +69,9 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
     const pagehide = (): void => {
       presence({ visible: false, closed: true })
     }
-    presence({ open: true, active: true })
+    const open = !openedSessions.has(sessionId)
+    openedSessions.add(sessionId)
+    presence({ open, active: true })
     const pollTimer = setInterval(() => {
       void poll()
     }, 2000)
@@ -114,3 +116,10 @@ export function createClientId(): string {
     byte.toString(16).padStart(2, '0'),
   ).join('')
 }
+
+// 页面刷新获得新身份；组件在命令行和轮次之间移动不应清除展示。
+let pageIdentity: { id: string; sequence: number } | undefined
+function getPageIdentity() {
+  return (pageIdentity ??= { id: createClientId(), sequence: 0 })
+}
+const openedSessions = new Set<string>()

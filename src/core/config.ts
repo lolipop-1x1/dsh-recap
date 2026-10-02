@@ -147,21 +147,11 @@ export const FIELDS: readonly FieldSpec[] = [
     'display',
     'number',
     160,
-    '回顾字符上限',
-    'Maximum recap characters',
-    '默认 160 字符，按页面宽度自动换行。',
-    'Defaults to 160 characters and wraps to the available width.',
+    '回顾目标字数',
+    'Target recap length',
+    '默认约 160 字符，保留完整句子；超过三行可展开。',
+    'About 160 characters by default; complete sentences are preserved and long recaps expand.',
     { min: 80, max: 1000 },
-  ),
-  field(
-    'includeFilePaths',
-    'display',
-    'boolean',
-    true,
-    '包含文件路径',
-    'Include file paths',
-    '控制摘要素材中的文件列表；消息中的路径不保证去除。',
-    'Controls the file list supplied for summarization; paths quoted in messages may remain.',
   ),
   field(
     'cacheTtlTurns',
@@ -233,7 +223,6 @@ export interface RecapConfig {
   maxSourceChars: number
   timeoutSeconds: number
   oneLineMaxChars: number
-  includeFilePaths: boolean
   cacheTtlTurns: number
   autoCooldownSeconds: number
   maxConcurrent: number
@@ -266,7 +255,9 @@ export function validatePatch(input: unknown): Partial<RecapConfig> {
   for (const [key, value] of Object.entries(data)) {
     // 兼容读取已移除的旧开关；打开、离开、压缩和每轮结束不再自动触发。
     if (
-      ['includeStats', 'onAway', 'onResume', 'onCompact', 'onTurnEnd'].includes(key) &&
+      ['includeFilePaths', 'includeStats', 'onAway', 'onResume', 'onCompact', 'onTurnEnd'].includes(
+        key,
+      ) &&
       typeof value === 'boolean'
     )
       continue

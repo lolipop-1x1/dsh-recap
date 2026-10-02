@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react'
+import React, { useId, useState, useEffect, useRef } from 'react'
 import type { Language } from '../core/config.js'
 import { t } from './i18n.js'
 export function RecapText({
@@ -14,6 +14,19 @@ export function RecapText({
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false)
   const id = useId()
+  const summary = useRef<HTMLSpanElement>(null)
+  const [overflow, setOverflow] = useState(false)
+  useEffect(() => {
+    const element = summary.current
+    if (!element) return
+    const measure = () => {
+      if (!expanded) setOverflow(element.scrollHeight > element.clientHeight + 1)
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [text, expanded])
   return (
     <section className="dshr-recap" aria-label={t(language, 'title')}>
       <button
@@ -33,12 +46,17 @@ export function RecapText({
           recap
         </span>
         <span className="dshr-recap-separator" aria-hidden="true" />
-        <span id={id} className="dshr-summary" data-expanded={expanded}>
+        <span ref={summary} id={id} className="dshr-summary" data-expanded={expanded}>
           {facts && <span className="dshr-kind">{t(language, 'facts')} · </span>}
           {stale && <span className="dshr-kind">{t(language, 'stale')} · </span>}
           {text}
         </span>
       </button>
+      {(overflow || expanded) && (
+        <button className="dshr-text-button" type="button" onClick={() => setExpanded(!expanded)}>
+          {t(language, expanded ? 'collapse' : 'expand')}
+        </button>
+      )}
     </section>
   )
 }

@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RecapView } from '../src/client/RecapView.js'
+import { SettingsDialog } from '../src/client/SettingsDialog.js'
 import { Settings } from '../src/client/Settings.js'
 import { createApi } from '../src/client/api.js'
 import { FIELDS, resolveConfig } from '../src/core/config.js'
@@ -126,6 +127,8 @@ style.textContent = styles
 document.head.append(style)
 const root = createRoot(document.getElementById('root')!)
 function App() {
+  const [settingsCommand, setSettingsCommand] = useState({ id: 'historical-settings', time: 0 })
+  const [dialogMount, setDialogMount] = useState(0)
   return (
     <>
       <header className="fixture-heading">
@@ -139,6 +142,18 @@ function App() {
         <RecapView api={api} locale={locale} sessionId="browser-session" turn={7} />
         <textarea aria-label="Conversation input" placeholder="继续之前的工作…" />
         <hr />
+        <button onClick={() => setSettingsCommand({ id: crypto.randomUUID(), time: Date.now() })}>
+          Run settings command
+        </button>
+        <button onClick={() => setDialogMount(dialogMount + 1)}>Remount settings command</button>
+        <SettingsDialog
+          key={`${settingsCommand.id}:${dialogMount}`}
+          requestId={settingsCommand.id}
+          requestedAt={settingsCommand.time}
+          api={api}
+          locale={locale}
+          loadModels={loadModels}
+        />
         <Settings api={api} locale={locale} loadModels={loadModels} />
       </main>
     </>

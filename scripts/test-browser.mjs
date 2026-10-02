@@ -47,6 +47,8 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`)
   const banner = page.getByRole('region', { name: '会话回顾' })
   await banner.waitFor({ state: 'visible' })
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  checks.push('Historical settings command does not open a dialog')
   await page.evaluate(() => {
     const fixture = document.createElement('div')
     fixture.id = 'command-spacing-fixture'
@@ -90,16 +92,18 @@ try {
   }))
   assert.ok(collapsed.height <= collapsed.line * 3 + 1)
   assert.ok(collapsed.full > collapsed.height)
-  await banner.getByRole('button', { name: '展开', exact: false }).click()
+  await banner.getByRole('button', { name: '展开会话回顾', exact: true }).click()
   assert.equal(
-    await banner.getByRole('button', { name: '收起', exact: false }).getAttribute('aria-expanded'),
+    await banner
+      .getByRole('button', { name: '收起会话回顾', exact: true })
+      .getAttribute('aria-expanded'),
     'true',
   )
   assert.ok(
     (await preview.evaluate((element) => element.getBoundingClientRect().height)) >
       collapsed.height,
   )
-  await banner.getByRole('button', { name: '收起', exact: false }).click()
+  await banner.getByRole('button', { name: '收起会话回顾', exact: true }).click()
   checks.push('Three-line preview expands and collapses without duplicating text')
   assert.ok(Array.from(await preview.innerText()).length <= 400)
   await page.setViewportSize({ width: 1100, height: 900 })
@@ -156,9 +160,11 @@ try {
   checks.push('Revision conflict retains the user draft')
   await page.getByRole('button', { name: '重新读取', exact: true }).click()
   await page.waitForFunction(
-    () => document.querySelector('#dshr-setting-idleMinutes')?.value === '5',
+    () => document.querySelector('#dshr-setting-idleMinutes')?.value === '17',
   )
-  checks.push('Explicit reload discards the conflicting draft')
+  await page.getByRole('button', { name: '重试保存', exact: true }).click()
+  await page.getByText('已保存，即时生效', { exact: true }).waitFor()
+  checks.push('Reload keeps the draft; explicit retry uses the latest revision')
   await page.evaluate(() => window.recapTest.locale('en'))
   await page.getByRole('heading', { name: 'Recap', exact: true }).waitFor()
   await page.evaluate(() => window.recapTest.show())
@@ -178,6 +184,31 @@ try {
   )
   await page.screenshot({ path: 'test-results/screenshots/preview-mobile.png', fullPage: true })
   checks.push('Narrow-screen layout has no horizontal overflow')
+  assert.equal(
+    await page.getByRole('button', { name: 'Open recap settings', exact: true }).count(),
+    0,
+  )
+  await page.getByRole('button', { name: 'Run settings command', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Recap settings', exact: true })
+  await dialog.waitFor({ state: 'visible' })
+  await dialog.getByLabel('Idle threshold (minutes)', { exact: true }).fill('8')
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByText('Saved; active immediately', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Run settings command', exact: true }).click()
+  assert.equal(
+    await dialog.getByLabel('Idle threshold (minutes)', { exact: true }).inputValue(),
+    '8',
+  )
+  await page.keyboard.press('Escape')
+  await dialog.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'Remount settings command', exact: true }).click()
+  await page.waitForTimeout(100)
+  assert.equal(await page.getByRole('dialog').count(), 0)
+  checks.push('Closing and remounting the same settings command does not reopen the dialog')
+  checks.push(
+    'New settings command opens the dialog directly without a launch button; immediate close saves changes and Escape closes it',
+  )
   await page.evaluate(() => window.recapTest.unavailable())
   await english.waitFor({ state: 'detached' })
   await page.waitForTimeout(2200)

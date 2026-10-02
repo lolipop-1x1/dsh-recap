@@ -110,7 +110,7 @@ it('updates the menu label without replacing the settings entry when locale chan
   f.language('zh-CN')
   expect(f.rows.get('settings.section')).toBe(entry)
   expect(resolveSlotLabel(label)).toBe('会话回顾')
-  expect(f.rows.size).toBe(3)
+  expect(f.rows.size).toBe(4)
 })
 it('removes styles and registrations on unload', async () => {
   const f = await mount()
@@ -124,7 +124,7 @@ it('does not accumulate duplicate registrations across remounts', async () => {
   await f.fiber.dispose()
   await f.ctx.plugin(Client)
   expect(f.styles.size).toBe(1)
-  expect(f.rows.size).toBe(3)
+  expect(f.rows.size).toBe(4)
 })
 
 import { createClientId } from '../src/client/use-recap.js'
@@ -138,7 +138,7 @@ it('creates a bounded presence identifier when randomUUID is unavailable', () =>
 })
 it('renders recap command rows in chat instead of the composer dock', async () => {
   const f = await mount()
-  expect(f.rows.has('conversation.input.dock')).toBe(false)
+  expect(f.rows.get('conversation.input.dock')?.id).toBe('dsh-recap-empty-command')
   expect(f.rows.get('conversation.chat.commandview')?.key).toBe('recap')
   expect(f.rows.has('conversation.chat.turnTail')).toBe(true)
   const component = f.rows.get('conversation.chat.commandview')?.component as ComponentType<
@@ -204,3 +204,90 @@ it('places the latest recap after Compact in its command row without a duplicate
   expect(row(props)?.props.children).toBeNull()
   expect(tail(props)).not.toBeNull()
 })
+
+it('空白会话也保留命令的无数据提示', async () => {
+  const f = await mount()
+  const component = f.rows.get('conversation.chat.commandview')?.component as ComponentType<
+    Record<string, unknown>
+  >
+  const node = {
+    seq: 1,
+    name: 'recap',
+    args: '',
+    outcome: { kind: 'error', text: '暂无可回顾的对话' },
+  }
+  const html = renderToStaticMarkup(
+    createElement(component, {
+      node,
+      sessionId: 'empty',
+      useSession: () => false,
+      useChat: (select: (value: object) => unknown) =>
+        select({
+          timeline: { turnOrder: [], turns: new Map() },
+          order: ['command'],
+          nodes: new Map([['command', { kind: 'command', data: node }]]),
+        }),
+    }),
+  )
+  expect(html).toContain('暂无可回顾的对话')
+})
+
+it('空白会话在输入区显示命令反馈，普通会话不重复展示', async () => {
+  const f = await mount()
+  const component = f.rows.get('conversation.input.dock')?.component as ComponentType<
+    Record<string, unknown>
+  >
+  const node = {
+    seq: 1,
+    name: 'recap',
+    args: '',
+    outcome: { kind: 'error', text: '当前还没有可展示的回顾' },
+  }
+  const props = {
+    sessionId: 'empty',
+    useSession: () => true,
+    useChat: (select: (value: object) => unknown) =>
+      select({
+        timeline: { turnOrder: [], turns: new Map() },
+        order: ['cmd'],
+        nodes: new Map([['cmd', { kind: 'command', data: node }]]),
+      }),
+  }
+  expect(renderToStaticMarkup(createElement(component, props))).toContain('当前还没有可展示的回顾')
+  expect(
+    renderToStaticMarkup(createElement(component, { ...props, useSession: () => false })),
+  ).toBe('')
+})
+
+it.each(['settings', 'status', 'help'])(
+  '执行 %s 后摘要仍位于 Compact 后的原回顾命令行',
+  async (args) => {
+    const f = await mount()
+    const recap = { seq: 12, name: 'recap', args: '', outcome: { kind: 'success', text: '已受理' } }
+    const later = { seq: 13, name: 'recap', args, outcome: { kind: 'success', text: '命令提示' } }
+    const snapshot = {
+      timeline: { turnOrder: [3], turns: new Map([[3, { end: { seq: 10 } }]]) },
+      order: ['compact', 'recap', 'later'],
+      nodes: new Map([
+        ['compact', { kind: 'command', data: { seq: 11, name: 'compact' } }],
+        ['recap', { kind: 'command', data: recap }],
+        ['later', { kind: 'command', data: later }],
+      ]),
+    }
+    const props = {
+      sessionId: 's',
+      turn: { turn: 3 },
+      node: recap,
+      useChat: (select: (value: object) => unknown) => select(snapshot),
+      useSession: () => true,
+    }
+    const row = f.rows.get('conversation.chat.commandview')?.component as (
+      props: object,
+    ) => ReactElement<{ children: ReactElement<{ turn: number }> | null }>
+    const tail = f.rows.get('conversation.chat.turnTail')?.component as (
+      props: object,
+    ) => ReactElement | null
+    expect(row(props).props.children?.props.turn).toBe(3)
+    expect(tail(props)).toBeNull()
+  },
+)

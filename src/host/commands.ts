@@ -67,7 +67,14 @@ export function installCommand(
                 .request(agent.id, 'manual', { force: args === 'refresh' })
                 .catch(() => undefined)
             }
-            const state = args === 'status' ? engine.reveal(agent.id) : engine.state(agent.id)
+            const state = engine.state(agent.id)
+            if (args === 'status')
+              return {
+                kind: 'success',
+                text: en
+                  ? `Recap: ${state.status}; ${state.hidden ? 'hidden' : 'visible'}. Use /recap to show it.`
+                  : `回顾${state.hidden ? '已隐藏' : '正在显示'}；${state.status === 'error' ? '最近生成失败' : state.recap ? '已有缓存' : '尚无摘要'}。执行 /recap 可显示回顾。`,
+              }
             if (state.status === 'busy')
               return {
                 kind: 'error',

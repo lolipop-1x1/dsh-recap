@@ -5,6 +5,8 @@ interface Tab {
   sequence: number
   visible: boolean
   seen: number
+  closed: boolean
+  hiddenThrough: number
 }
 /** 时间由 Host 记录，页面序号只用于拒绝乱序消息。 */
 export class Presence {
@@ -15,7 +17,7 @@ export class Presence {
   constructor(now: number) {
     this.lastInteraction = now
   }
-  update(message: PresenceMessage, now: number): { accepted: boolean } {
+  update(message: PresenceMessage, now: number, presentation = 0): { accepted: boolean } {
     const old = this.tabs.get(message.clientId)
     if (old && old.sequence >= message.sequence) return { accepted: false }
     this.isVisible(now)
@@ -28,10 +30,19 @@ export class Presence {
       sequence: message.sequence,
       visible: message.visible && !message.closed,
       seen: now,
+      closed: message.closed === true,
+      hiddenThrough: message.open ? presentation : (old?.hiddenThrough ?? -1),
     })
     if (message.visible && (message.active || message.open)) this.activity(now)
     this.isVisible(now)
     return { accepted: true }
+  }
+  canDisplay(clientId: string, presentation: number): boolean {
+    const tab = this.tabs.get(clientId)
+    return !!tab && !tab.closed && presentation > tab.hiddenThrough
+  }
+  hasOpen(): boolean {
+    return [...this.tabs.values()].some((tab) => !tab.closed)
   }
   activity(now: number): void {
     this.lastInteraction = now

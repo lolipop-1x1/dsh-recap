@@ -12,7 +12,7 @@ export const styles = `
 .dshr-recap-separator{width:2px;height:2px;flex:none;background:var(--dsw-alias-label-caption,currentColor);margin:calc(11px + var(--dsh-content-font-delta,0px)/2) 8px 0;border-radius:1px}
 .dshr-summary{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
 .dshr-summary[data-expanded=true]{display:block;overflow:visible}
-.dshr-command-note{margin:8px 0;font-size:13px;color:var(--dsw-alias-label-tertiary,GrayText);overflow-wrap:anywhere}
+.dshr-command-note{margin:8px 0;font-size:var(--dsh-content-font-size-secondary,13px);color:var(--dsw-alias-label-tertiary,GrayText);overflow-wrap:anywhere}
 .dshr-button:hover{background:color-mix(in srgb,currentColor 7%,transparent)}
 .dshr-recap button:focus-visible,.dshr-settings :is(button,input,select):focus-visible{outline:2px solid Highlight;outline-offset:2px}
 .dshr-settings button:disabled{opacity:.4;cursor:not-allowed}
@@ -24,5 +24,6 @@ export const styles = `
 .dshr-field label{font-size:13px;font-weight:500}.dshr-field p{font-size:12px;color:var(--r-muted);margin:4px 0 0;line-height:1.5;max-width:390px}
 .dshr-field input:not([type=checkbox]),.dshr-field select{font:inherit;font-size:13px;color:inherit;background:var(--r-bg);border:1px solid var(--r-line);border-radius:6px;min-width:0;width:190px;padding:7px 8px;flex-shrink:0}.dshr-field input[type=number]{width:105px}.dshr-field input[type=checkbox]{width:18px;height:18px;cursor:pointer;flex-shrink:0}
 .dshr-setting-actions{display:flex;justify-content:flex-end;margin:12px 0}
+.dshr-settings-dialog{box-sizing:border-box;width:min(850px,95vw);max-height:85vh;overflow:auto;border:1px solid var(--dsw-alias-border-l4,ButtonBorder);border-radius:12px;background:var(--dsw-alias-bg-layer-1,Canvas);color:var(--dsw-alias-label-primary,CanvasText);padding:16px}.dshr-settings-dialog::backdrop{background:#0008}
 @media(max-width:520px){.dshr-field{align-items:flex-start;gap:12px}.dshr-field input:not([type=checkbox]),.dshr-field select{width:125px}.dshr-settings fieldset{padding:4px 10px}}
 `

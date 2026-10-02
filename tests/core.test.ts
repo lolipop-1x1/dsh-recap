@@ -166,7 +166,7 @@ describe('prompt construction', () => {
     const facts = deriveFacts('s', s.session.state, resolveConfig({}))
     facts.latestResponse = '这是一段不应该复制进回顾的长回复。'.repeat(100)
     const recap = factualSummary(facts, 'zh', 400)
-    expect(recap).toContain(facts.latestRequest)
+    expect(recap).toBe('')
     expect(recap).not.toContain('长回复')
     expect(recap).not.toContain('上次回复')
     f.engine.dispose()
@@ -218,4 +218,14 @@ it('labels completed goals as completed in factual fallback', () => {
   expect(factualSummary(facts, 'zh', 400)).not.toContain('当前任务：实现便签功能')
   expect(factualSummary(facts, 'en', 400)).toContain('Completed goal: 实现便签功能')
   f.engine.dispose()
+})
+
+it('兼容但忽略旧文件路径开关，不再单独收集文件列表', () => {
+  const config = resolveConfig({ includeFilePaths: true })
+  expect(config).not.toHaveProperty('includeFilePaths')
+  const facts = deriveFacts('s', initialState(), config, {
+    files: [{ path: '/private/demo', added: 1, deleted: 0, turn: 1 }],
+  })
+  expect(facts.files).toEqual([])
+  expect(buildPrompt(facts, config, 'zh').input).not.toContain('/private/demo')
 })

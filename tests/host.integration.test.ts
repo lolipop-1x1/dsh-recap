@@ -161,8 +161,9 @@ describe('real Cordis, Session, Projection and Command services', () => {
     )
     await f.command('/recap')
     const state = await f.ready()
-    expect(state.recap?.source).toBe('facts')
-    expect(state.recap?.text).not.toContain('unfinished')
+    expect(state.recap).toBeNull()
+    expect(state.status).toBe('error')
+    expect(String(state.recap?.text)).not.toContain('unfinished')
   })
   it('exposes help and rejects unknown command arguments', async () => {
     const f = await mount()
@@ -171,7 +172,7 @@ describe('real Cordis, Session, Projection and Command services', () => {
     expect(f.stream).not.toHaveBeenCalled()
     await f.command('/recap')
     await f.ready()
-    expect((await f.command('/recap status'))?.result.text).toContain('已就绪')
+    expect((await f.command('/recap status'))?.result.text).toContain('已有缓存')
     expect(f.stream).toHaveBeenCalledTimes(1)
   })
 })
@@ -228,9 +229,10 @@ it.each(['max-tokens', 'error', 'aborted', 'tool-calls'])(
     )
     await f.command('/recap')
     const state = await f.ready()
-    expect(state.recap?.source).toBe('facts')
-    expect(state.recap?.warning).toBe('INCOMPLETE_RESPONSE')
-    expect(state.recap?.text).not.toContain('不完整的模型输出')
+    expect(state.recap).toBeNull()
+    expect(state.status).toBe('error')
+    expect(state.error).toBe('INCOMPLETE_RESPONSE')
+    expect(String(state.recap?.text)).not.toContain('不完整的模型输出')
   },
 )
 it.each(['empty', 'exception', 'oversized'])(
@@ -247,9 +249,10 @@ it.each(['empty', 'exception', 'oversized'])(
     )
     await f.command('/recap')
     const state = await f.ready()
-    expect(state.recap?.source).toBe('facts')
-    expect(state.recap?.text).not.toContain('PRIVATE_PROVIDER_ERROR')
-    expect(state.recap?.warning).toBe(
+    expect(state.recap).toBeNull()
+    expect(state.status).toBe('error')
+    expect(String(state.recap?.text)).not.toContain('PRIVATE_PROVIDER_ERROR')
+    expect(state.error).toBe(
       { empty: 'EMPTY_RESPONSE', exception: 'GENERATION_FAILED', oversized: 'OUTPUT_TOO_LARGE' }[
         failure
       ],
@@ -266,4 +269,15 @@ it('forwards the requested language and budgets without tools or main-model muta
   expect(options.maxTokens).toBe(256)
   expect(options).not.toHaveProperty('tools')
   expect(f.agent.options).toEqual(before)
+})
+
+it('status 只查询，不恢复 hide 暂停的回顾', async () => {
+  const f = await mount()
+  await f.command('/recap')
+  await f.ready()
+  await f.command('/recap hide')
+  const before = await f.read()
+  expect((await f.command('/recap status'))?.result.text).toContain('已隐藏')
+  expect(await f.read()).toEqual(before)
+  expect(f.stream).toHaveBeenCalledTimes(1)
 })

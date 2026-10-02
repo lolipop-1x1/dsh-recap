@@ -1,6 +1,7 @@
 import React from 'react'
+import { RecapError } from '../core/config.js'
 import type { ApiClient } from './api.js'
-import { t, useLanguage, type LocaleAccess } from './i18n.js'
+import { t, errorText, useLanguage, type LocaleAccess } from './i18n.js'
 import { useRecap } from './use-recap.js'
 import { RecapText } from './RecapText.js'
 export interface RecapViewProps {
@@ -27,14 +28,30 @@ export function RecapView({
       </p>
     )
   const recap = state.recap
-  if (!recap) return null
   return (
-    <RecapText
-      key={recap.id}
-      text={recap.text}
-      language={language}
-      facts={recap.source === 'facts'}
-      stale={state.stale}
-    />
+    <>
+      {state.error && (
+        <p className="dshr-command-note" role="status">
+          {errorText(new RecapError(state.error, ''), language)}{' '}
+          <button
+            className="dshr-text-button"
+            onClick={() => {
+              void api('refresh', { sessionId }).catch(() => undefined)
+            }}
+          >
+            {language === 'zh' ? '重试' : 'Retry'}
+          </button>
+        </p>
+      )}
+      {recap && (
+        <RecapText
+          key={recap.id}
+          text={recap.text}
+          language={language}
+          facts={recap.source === 'facts'}
+          stale={state.stale}
+        />
+      )}
+    </>
   )
 }

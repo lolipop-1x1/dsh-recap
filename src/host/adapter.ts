@@ -5,7 +5,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { RecapError, type RecapConfig, type Language } from '../core/config.js'
-import { buildPrompt, deriveFacts, type Facts, type FileChange } from '../core/facts.js'
+import { buildPrompt, deriveFacts, type Facts } from '../core/facts.js'
 import { PROJECTION_KEY, initialState, type FoldState } from '../core/projection.js'
 import type { LiveSnapshot, ModelResult } from '../core/contracts.js'
 import { textBlocks } from '../core/text.js'
@@ -19,19 +19,6 @@ export function snapshot(ctx: Context, id: string, config: RecapConfig): LiveSna
   if (!agent) return undefined
   const state = ctx.sessionProjections.stateOf(agent.session, PROJECTION_KEY) ?? initialState()
   const extra = ctx.sessionProjections.snapshot(agent.session, ['todos', 'goal', 'title']).values
-  const files = new Map<string, FileChange>()
-  const changes = ctx.get('workspaceChanges')
-  if (config.includeFilePaths && changes)
-    for (const event of state.fileEvents) {
-      for (const file of changes.summary(agent.id, event.seq)?.files ?? []) {
-        files.set(file.display, {
-          path: file.display,
-          added: file.added,
-          deleted: file.deleted,
-          turn: event.turn,
-        })
-      }
-    }
   return {
     instance: agent,
     running: agent.status === 'running',
@@ -40,7 +27,6 @@ export function snapshot(ctx: Context, id: string, config: RecapConfig): LiveSna
       title: extra.title,
       todos: extra.todos,
       goal: extra.goal,
-      files: [...files.values()],
     }),
   }
 }
@@ -92,7 +78,9 @@ export async function generate(
   }
   if (!completed || assembler.finish.kind !== 'stop')
     throw new RecapError('INCOMPLETE_RESPONSE', 'The model did not finish a complete recap.', 502)
-  const text = textBlocks(assembler.blocks(), config.oneLineMaxChars)
+  const text = textBlocks(assembler.blocks(), 8001)
+  if (Array.from(text).length > 8000)
+    throw new RecapError('OUTPUT_TOO_LARGE', 'Recap exceeds the safety limit.', 502)
   if (!text.trim()) throw new RecapError('EMPTY_RESPONSE', 'The model returned no recap text.', 502)
   return { text, provider, model }
 }

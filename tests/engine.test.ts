@@ -78,9 +78,9 @@ describe('manual and automatic recap', () => {
   it('deterministic mode never calls a model', async () => {
     const f = setup({ mode: 'deterministic' })
     f.add()
-    expect((await f.engine.request('session-1', 'manual')).recap?.source).toBe('facts')
+    expect((await f.engine.request('session-1', 'manual')).error).toBe('NO_STRUCTURED_DATA')
     f.engine.dismiss('session-1')
-    expect(f.engine.reveal('session-1').hidden).toBe(false)
+    expect((await f.engine.request('session-1', 'manual')).hidden).toBe(false)
     expect(f.generate).not.toHaveBeenCalled()
   })
 })
@@ -123,7 +123,7 @@ describe('cancellation, stale work and resource bounds', () => {
     await flush()
     const next = f.engine.request('b', 'manual')
     await vi.advanceTimersByTimeAsync(2001)
-    expect((await pending).recap?.warning).toBe('TIMEOUT')
+    expect((await pending).error).toBe('TIMEOUT')
     expect((await next).recap?.source).toBe('model')
     expect(f.engine.inspect().active).toBe(0)
   })
@@ -518,4 +518,59 @@ it('does not resurrect a recap after refreshing during manual generation', async
   await request
   expect(f.engine.state('session-1').hidden).toBe(true)
   expect(f.engine.state('session-1').recap).toBeNull()
+})
+
+it('保留已有摘要并展示生成失败，不用用户原话降级', async () => {
+  const f = setup()
+  f.add()
+  const old = await f.engine.request('session-1', 'manual')
+  f.generate.mockRejectedValueOnce(new Error('private provider details'))
+  const failed = await f.engine.request('session-1', 'manual', { force: true })
+  expect(failed.recap).toEqual(old.recap)
+  expect(failed.status).toBe('error')
+  expect(failed.error).toBe('GENERATION_FAILED')
+})
+it('调度设置保留缓存，内容设置只标记较早摘要并使下次请求重新生成', async () => {
+  const f = setup()
+  f.add()
+  const first = await f.engine.request('session-1', 'manual')
+  f.setConfig({ idleMinutes: 5, maxConcurrent: 3, onCommand: false })
+  expect(f.engine.state('session-1')).toMatchObject({
+    recap: first.recap,
+    hidden: false,
+    stale: false,
+  })
+  await f.engine.request('session-1', 'manual')
+  expect(f.generate).toHaveBeenCalledTimes(1)
+  f.setConfig({ model: 'new', provider: 'test' })
+  expect(f.engine.state('session-1')).toMatchObject({
+    recap: first.recap,
+    hidden: false,
+    stale: true,
+  })
+  await f.engine.request('session-1', 'manual')
+  expect(f.generate).toHaveBeenCalledTimes(2)
+})
+it('刷新只隐藏该页面的旧摘要，后台超过租约的另一页面仍保留摘要', async () => {
+  const f = setup()
+  f.add()
+  f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true, open: true })
+  f.engine.presence('session-1', { clientId: 'b', sequence: 1, visible: true, open: true })
+  await f.engine.request('session-1', 'manual')
+  await vi.advanceTimersByTimeAsync(50000)
+  f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false, closed: true })
+  f.engine.presence('session-1', { clientId: 'a-new', sequence: 1, visible: true, open: true })
+  expect(f.engine.state('session-1', 'a-new').hidden).toBe(true)
+  expect(f.engine.state('session-1', 'b').hidden).toBe(false)
+  await f.engine.request('session-1', 'idle')
+  expect(f.engine.state('session-1', 'a-new').hidden).toBe(true)
+  await f.engine.request('session-1', 'manual')
+  expect(f.engine.state('session-1', 'a-new').hidden).toBe(false)
+})
+it('摘要目标字数不会截掉模型已经生成的完整下一步', async () => {
+  const f = setup({ oneLineMaxChars: 80 })
+  f.add()
+  const text = '已经完成权限回归。'.repeat(12) + '下一步发布到测试环境。'
+  f.generate.mockResolvedValueOnce(result(text))
+  expect((await f.engine.request('session-1', 'manual')).recap?.text).toBe(text)
 })

@@ -11,7 +11,9 @@ const id = z
   .min(1)
   .max(256)
   .regex(/^[^\u0000-\u0020/\\]+$/u)
-const sessionBody = z.object({ sessionId: id }).strict()
+const sessionBody = z
+  .object({ sessionId: id, clientId: z.string().min(1).max(128).optional() })
+  .strict()
 const presenceBody = z
   .object({
     sessionId: id,
@@ -104,14 +106,14 @@ export function handler(
         const { sessionId, ...message } = presenceBody.parse(body)
         return json({ ok: true, data: engine.presence(sessionId, message) })
       }
-      const { sessionId } = sessionBody.parse(body)
+      const { sessionId, clientId } = sessionBody.parse(body)
       if (route === 'dismiss') return json({ ok: true, data: engine.dismiss(sessionId) })
       if (route === 'refresh') {
         engine.state(sessionId)
         engine.background(sessionId, 'manual', true)
         return json({ ok: true, data: engine.state(sessionId) }, 202)
       }
-      return json({ ok: true, data: engine.state(sessionId) })
+      return json({ ok: true, data: engine.state(sessionId, clientId) })
     } catch (error) {
       if (error instanceof z.ZodError)
         return json(

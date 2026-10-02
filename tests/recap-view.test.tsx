@@ -42,7 +42,7 @@ it('renders an approved older cache only in its presentation turn and labels it 
   const html = render()
   expect(html).toContain('已补齐权限用例')
   expect(html).toContain('较早回顾')
-  expect(html).toContain('事实整理')
+  expect(html).toContain('任务状态')
   expect(render(3)).toBe('')
   expect(view.current?.recap?.turn).toBe(3)
 })
@@ -67,4 +67,20 @@ it('shows manual generation only in the intended current turn', () => {
 it('keeps an unavailable state quiet', () => {
   view.current = null
   expect(render()).toBe('')
+})
+
+it('生成失败显示安全原因及重试，同时保留旧摘要', () => {
+  view.current!.status = 'error'
+  view.current!.error = 'INCOMPLETE_RESPONSE'
+  const html = render()
+  expect(html).toContain('模型未完整返回摘要')
+  expect(html).toContain('重试')
+  expect(html).toContain('已补齐权限用例')
+})
+it('首次失败也展示提示，不伪造摘要', () => {
+  view.current!.status = 'error'
+  view.current!.error = 'TIMEOUT'
+  view.current!.recap = null
+  expect(render()).toContain('回顾生成超时')
+  expect(render()).not.toContain('dshr-summary')
 })

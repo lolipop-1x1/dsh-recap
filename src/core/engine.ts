@@ -30,11 +30,13 @@ interface Entry {
   locale: string
   status: ViewState['status']
   recap: Recap | null
+  recapSignature?: string
   error: string | null
   task?: Task
   pending?: Trigger
   nextAutoAt: number
   displayTurn: number | null
+  presentation: number
   presence: Presence
 }
 export class RecapEngine {
@@ -47,7 +49,7 @@ export class RecapEngine {
   private serial = 0
   constructor(private readonly ports: EnginePorts) {
     this.config = ports.config()
-    this.signature = JSON.stringify(this.config)
+    this.signature = contentSignature(this.config)
     this.gate = new WorkGate(() => this.config.maxConcurrent)
   }
   private now(): number {
@@ -55,17 +57,15 @@ export class RecapEngine {
   }
   syncConfig(): void {
     const config = this.ports.config(),
-      signature = JSON.stringify(config)
-    if (signature === this.signature) return
+      signature = contentSignature(config)
+    if (JSON.stringify(config) === JSON.stringify(this.config)) return
+    const changed = signature !== this.signature
     this.config = config
     this.signature = signature
     for (const entry of this.entries.values()) {
-      this.cancel(entry)
-      entry.recap = null
-      entry.displayTurn = null
-      entry.error = null
+      if (changed || ((!config.autoEnabled || !config.onIdle) && entry.task?.automatic))
+        this.cancel(entry)
       entry.pending = undefined
-      entry.status = 'empty'
       entry.presence.reset()
       entry.revision++
     }
@@ -97,6 +97,7 @@ export class RecapEngine {
         error: null,
         nextAutoAt: 0,
         displayTurn: null,
+        presentation: 0,
         presence: new Presence(this.now()),
       }
     }
@@ -116,17 +117,21 @@ export class RecapEngine {
     const fallback = /\p{Script=Han}/u.test(facts.latestRequest) ? 'zh' : 'en'
     return languageOf(this.config, entry.locale || fallback)
   }
-  private view(entry: Entry, live?: LiveSnapshot): ViewState {
+  private view(entry: Entry, live?: LiveSnapshot, clientId?: string): ViewState {
     const snapshot = live ?? (this.closed ? undefined : this.ports.snapshot(entry.id, this.config))
     return {
       sessionId: entry.id,
       status: entry.status,
       revision: entry.revision,
-      hidden: this.dismissed.has(entry.instance) || entry.displayTurn === null,
+      hidden:
+        this.dismissed.has(entry.instance) ||
+        entry.displayTurn === null ||
+        (!!clientId && !entry.presence.canDisplay(clientId, entry.presentation)),
       displayTurn: entry.displayTurn,
       stale:
         entry.recap !== null &&
-        (!snapshot ||
+        (entry.recapSignature !== this.signature ||
+          !snapshot ||
           entry.recap.watermark !== snapshot.facts.watermark ||
           entry.recap.language !== this.language(entry, snapshot.facts)),
       recap: entry.recap,
@@ -134,10 +139,10 @@ export class RecapEngine {
       autoEnabled: this.config.autoEnabled,
     }
   }
-  state(id: string): ViewState {
+  state(id: string, clientId?: string): ViewState {
     this.syncConfig()
     const live = this.live(id)
-    return this.view(this.entry(id, live), live)
+    return this.view(this.entry(id, live), live, clientId)
   }
   private cancel(entry: Entry): void {
     entry.epoch++
@@ -153,14 +158,6 @@ export class RecapEngine {
     entry.displayTurn = null
     entry.pending = undefined
     entry.presence.activity(this.now())
-  }
-  reveal(id: string): ViewState {
-    this.syncConfig()
-    const live = this.live(id),
-      entry = this.entry(id, live)
-    this.dismissed.delete(entry.instance)
-    this.present(entry, live.facts.turn)
-    return this.view(entry, live)
   }
   idle(id: string): void {
     const entry = this.entries.get(id)
@@ -207,10 +204,11 @@ export class RecapEngine {
       entry.revision++
       return Promise.resolve(this.view(entry, live))
     }
-    if (manual) this.present(entry, facts.turn)
+    if (manual) this.present(entry, facts.turn, true)
     const recap = entry.recap
     if (
       !options.force &&
+      entry.recapSignature === this.signature &&
       recap?.language === language &&
       (recap.watermark === facts.watermark ||
         (!manual &&
@@ -234,14 +232,14 @@ export class RecapEngine {
       entry.pending = trigger
       return Promise.resolve(this.view(entry, live))
     }
+    if (!manual) this.present(entry, facts.turn, true)
     if (this.config.mode === 'deterministic') {
-      this.commit(
-        entry,
-        facts,
-        language,
-        factualSummary(facts, language, this.config.oneLineMaxChars),
-        'facts',
-      )
+      const text = factualSummary(facts, language, this.config.oneLineMaxChars)
+      if (text) this.commit(entry, facts, language, text, 'facts')
+      else {
+        entry.error = 'NO_STRUCTURED_DATA'
+        entry.status = 'error'
+      }
       return Promise.resolve(this.view(entry, live))
     }
     const task: Task = {
@@ -327,7 +325,9 @@ export class RecapEngine {
         task.controller.signal,
       )
       if (!this.current(entry, task)) throw new RecapError('CANCELLED', 'Session changed.', 409)
-      const text = line(result.text, config.oneLineMaxChars)
+      if (Array.from(result.text).length > 8000)
+        throw new RecapError('OUTPUT_TOO_LARGE', 'Recap exceeds the safety limit.', 502)
+      const text = line(result.text, 8000)
       if (!text) throw new RecapError('EMPTY_RESPONSE', 'The model returned no text.', 502)
       this.commit(
         entry,
@@ -349,20 +349,15 @@ export class RecapEngine {
     if (code === 'CANCELLED' || !this.current(entry, task))
       return { ...this.view(entry), error: 'CANCELLED' }
     this.ports.report?.(code)
-    this.commit(
-      entry,
-      task.facts,
-      task.language,
-      factualSummary(task.facts, task.language, this.config.oneLineMaxChars),
-      'facts',
-      code,
-      null,
-      null,
-    )
+    entry.error = code
+    entry.status = 'error'
+    entry.displayTurn = task.facts.turn
+    entry.revision++
     return this.view(entry)
   }
-  private present(entry: Entry, turn: number): void {
-    if (entry.displayTurn === turn) return
+  private present(entry: Entry, turn: number, fresh = false): void {
+    if (fresh) entry.presentation++
+    if (entry.displayTurn === turn && !fresh) return
     entry.displayTurn = turn
     entry.revision++
   }
@@ -378,7 +373,7 @@ export class RecapEngine {
   ): void {
     entry.recap = {
       id: `${facts.watermark}:${this.now()}:${++this.serial}`,
-      text: line(text, this.config.oneLineMaxChars),
+      text: line(text, 8000),
       source,
       generatedAt: this.now(),
       watermark: facts.watermark,
@@ -388,6 +383,7 @@ export class RecapEngine {
       provider,
       model,
     }
+    entry.recapSignature = this.signature
     entry.displayTurn = facts.turn
     entry.status = 'ready'
     entry.error = null
@@ -409,14 +405,14 @@ export class RecapEngine {
     this.syncConfig()
     const live = this.live(id),
       entry = this.entry(id, live)
-    const result = entry.presence.update(message, this.now())
-    if (!result.accepted) return this.view(entry, live)
+    const result = entry.presence.update(message, this.now(), entry.presentation)
+    if (!result.accepted) return this.view(entry, live, message.clientId)
     if (message.locale && entry.locale !== message.locale) {
       entry.locale = message.locale
       entry.revision++
       if (entry.task && entry.task.language !== this.language(entry, live.facts)) this.cancel(entry)
     }
-    if (message.closed && !entry.presence.isVisible(this.now()) && entry.displayTurn !== null) {
+    if (message.closed && !entry.presence.hasOpen() && entry.displayTurn !== null) {
       entry.displayTurn = null
       entry.revision++
       if (entry.task) this.cancel(entry)
@@ -425,7 +421,7 @@ export class RecapEngine {
       entry.pending = undefined
       if (entry.task?.automatic && entry.task.waiters === 0) this.cancel(entry)
     }
-    return this.view(entry)
+    return this.view(entry, live, message.clientId)
   }
   dismiss(id: string): ViewState {
     this.syncConfig()
@@ -485,4 +481,19 @@ export class RecapEngine {
   inspect(): { cached: number; active: number; queued: number } {
     return { cached: this.entries.size, active: this.gate.size, queued: this.gate.queued }
   }
+}
+
+// 调度设置不改变摘要内容，不应使缓存或正在展示的结果失效。
+function contentSignature(config: RecapConfig): string {
+  return JSON.stringify([
+    config.mode,
+    config.provider,
+    config.model,
+    config.language,
+    config.maxTokens,
+    config.maxSourceMessages,
+    config.maxSourceChars,
+    config.timeoutSeconds,
+    config.oneLineMaxChars,
+  ])
 }
