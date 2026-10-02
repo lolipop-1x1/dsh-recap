@@ -63,8 +63,12 @@ export class RecapEngine {
     this.config = config
     this.signature = signature
     for (const entry of this.entries.values()) {
-      if (changed || ((!config.autoEnabled || !config.onIdle) && entry.task?.automatic))
-        this.cancel(entry)
+      if (changed) this.cancel(entry)
+      else if ((!config.autoEnabled || !config.onIdle) && entry.task?.automatic) {
+        // Retire automatic demand without cancelling manual consumers of shared work.
+        entry.task.automatic = false
+        if (entry.task.waiters === 0) this.cancel(entry)
+      }
       entry.pending = undefined
       entry.presence.reset()
       entry.revision++

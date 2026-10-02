@@ -94,7 +94,7 @@ export function Settings({
           type="button"
           disabled={errorCode(error) === 'CONFLICT'}
           onClick={() => {
-            void save()
+            void save(true)
           }}
         >
           {language === 'zh' ? '重试保存' : 'Retry save'}

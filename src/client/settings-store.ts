@@ -16,6 +16,8 @@ export class SettingsStore {
   private listeners = new Set<() => void>()
   private timer?: ReturnType<typeof setTimeout>
   private loading?: Promise<void>
+  // 冲突确认独立于错误展示；重新读取和继续编辑都不能恢复自动保存。
+  private conflictNeedsRetry = false
   constructor(private readonly api: ApiClient) {}
   getSnapshot = () => this.snapshot
   subscribe = (listener: () => void) => {
@@ -53,14 +55,14 @@ export class SettingsStore {
       draft: next,
       saved: false,
       error: errorCode(error) === 'CONFLICT' ? error : null,
-      needsRetry: errorCode(error) === 'CONFLICT',
+      needsRetry: this.conflictNeedsRetry,
     })
     clearTimeout(this.timer)
     this.timer = setTimeout(() => {
       void this.save()
     }, 500)
   }
-  save = async (): Promise<void> => {
+  save = async (explicitRetry = false): Promise<void> => {
     clearTimeout(this.timer)
     const { view, draft, saving, error } = this.snapshot
     if (
@@ -68,9 +70,11 @@ export class SettingsStore {
       view.revision === null ||
       saving ||
       errorCode(error) === 'CONFLICT' ||
+      (this.conflictNeedsRetry && !explicitRetry) ||
       !Object.keys(draft).length
     )
       return
+    this.conflictNeedsRetry = false
     this.update({ saving: true, saved: false, error: null, needsRetry: false })
     let success = false
     try {
@@ -85,6 +89,7 @@ export class SettingsStore {
       this.update({ view: data, draft: pending, saved: true })
       success = true
     } catch (failure) {
+      this.conflictNeedsRetry = errorCode(failure) === 'CONFLICT'
       this.update({ error: failure, needsRetry: true })
     } finally {
       this.update({ saving: false })

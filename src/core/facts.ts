@@ -133,7 +133,7 @@ export function buildPrompt(
     'Historical errors may have been resolved. A last response can be a plan rather than an accomplishment.',
     `Write one or two short sentences in ${language === 'zh' ? 'Simplified Chinese' : 'English'}, aiming for ${config.oneLineMaxChars} Unicode characters. Preserve complete sentences and the supported next step. Use plain text without headings, markdown, preamble or meta commentary. Do not retell messages, quote the last answer or list session metadata.`,
   ].join('\n')
-  const data: Record<string, unknown> = {
+  const data = {
     latestRequest: line(facts.latestRequest, 600),
     latestResponse: line(facts.latestResponse, 800),
     title: facts.title,
@@ -142,11 +142,18 @@ export function buildPrompt(
     blockedReason: facts.goalBlockedReason,
     todos: facts.todos.slice(0, 12),
     historicalErrors: facts.errors.slice(-3),
-    checkpoint: limit(facts.checkpoint?.text ?? '', 2000),
-    recentMessages: [],
+    checkpoint: limit(redact(facts.checkpoint?.text ?? ''), 2000),
+    recentMessages: [] as MessageSnippet[],
   }
-  const stringify = (value: unknown): string =>
-    JSON.stringify(value, (_key, v: unknown) => (typeof v === 'string' ? redact(v) : v))
+  const stringify = (value: unknown, textBudget?: number): string =>
+    JSON.stringify(value, (key, v: unknown) => {
+      if (typeof v !== 'string') return v
+      const text = redact(v)
+      // Shorten evidence, never the labels describing its role or completion state.
+      return textBudget === undefined || ['goalPhase', 'status', 'role', 'kind'].includes(key)
+        ? text
+        : limit(text, textBudget)
+    })
   const messages: MessageSnippet[] = []
   for (const message of [...facts.messages].reverse()) {
     const candidate = [message, ...messages]
@@ -155,16 +162,21 @@ export function buildPrompt(
   }
   data.recentMessages = messages
   let input = stringify(data)
-  // Keep valid JSON even when metadata alone exceeds the budget.
+  // If metadata alone is too large, retain a sample of every evidence source.
+  // Bound list overhead so text can still fit at the minimum supported budget.
   if (input.length > config.maxSourceChars) {
-    let budget = Math.floor(config.maxSourceChars / 3)
-    do {
-      input = stringify({
-        latestRequest: line(facts.latestRequest, budget),
-        latestResponse: line(facts.latestResponse, budget),
-      })
-      budget = Math.max(1, Math.floor(budget * 0.7))
-    } while (input.length > config.maxSourceChars && budget > 1)
+    const compact = {
+      ...data,
+      todos: data.todos.slice(0, 3),
+      historicalErrors: data.historicalErrors.slice(-1),
+      recentMessages: facts.messages.slice(-1),
+    }
+    for (
+      let budget = Math.floor(config.maxSourceChars / 3);
+      input.length > config.maxSourceChars && budget > 0;
+      budget = Math.floor(budget * 0.7)
+    )
+      input = stringify(compact, budget)
   }
   return { system, input }
 }

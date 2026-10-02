@@ -15,7 +15,7 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
     const controllers = new Set<AbortController>()
     const visible = () => document.visibilityState === 'visible' && document.hasFocus()
     setState(null)
-    const send = async (route: Route, body: object): Promise<void> => {
+    const send = async (route: Route, body: object): Promise<boolean> => {
       const controller = new AbortController(),
         request = ++issued
       controllers.add(controller)
@@ -25,27 +25,33 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
           applied = request
           setState(data)
         }
+        return true
       } catch {
         // 会话加载或连接恢复期间静默重试，不展示空回顾或后台错误。
+        return false
       } finally {
         controllers.delete(controller)
       }
     }
-    const presence = (extra: object = {}): void => {
-      void send('presence', {
+    const presence = async (extra: object = {}): Promise<void> => {
+      const acknowledged = await send('presence', {
         sessionId,
         clientId: identity.current.id,
         sequence: ++identity.current.sequence,
         visible: visible(),
         locale: language,
+        open: !openedSessions.has(sessionId),
         ...extra,
       })
+      if (alive && acknowledged) openedSessions.add(sessionId)
     }
     const poll = async (): Promise<void> => {
       if (!visible() || polling) return
       polling = true
       try {
-        await send('state', { sessionId, clientId: identity.current.id })
+        if (openedSessions.has(sessionId))
+          await send('state', { sessionId, clientId: identity.current.id })
+        else await presence()
       } finally {
         polling = false
       }
@@ -53,30 +59,28 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
     const activity = (): void => {
       if (!visible() || Date.now() - lastActivity < 5000) return
       lastActivity = Date.now()
-      presence({ active: true })
+      void presence({ active: true })
     }
     const visibility = (): void => {
-      presence()
+      void presence()
       if (visible()) void poll()
     }
     const focus = (): void => {
-      presence({ visible: true, active: true })
+      void presence({ visible: true, active: true })
       void poll()
     }
     const blur = (): void => {
-      presence({ visible: false })
+      void presence({ visible: false })
     }
     const pagehide = (): void => {
-      presence({ visible: false, closed: true })
+      void presence({ visible: false, closed: true })
     }
-    const open = !openedSessions.has(sessionId)
-    openedSessions.add(sessionId)
-    presence({ open, active: true })
+    void presence({ active: true })
     const pollTimer = setInterval(() => {
       void poll()
     }, 2000)
     const heartbeat = setInterval(() => {
-      if (visible()) presence()
+      if (visible()) void presence()
     }, 15000)
     document.addEventListener('visibilitychange', visibility)
     document.addEventListener('pointerdown', activity, { passive: true })
@@ -102,6 +106,7 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
         clientId: identity.current.id,
         sequence: ++identity.current.sequence,
         visible: false,
+        open: !openedSessions.has(sessionId),
       }).catch(() => undefined)
     }
   }, [api, sessionId, language])
@@ -122,4 +127,5 @@ let pageIdentity: { id: string; sequence: number } | undefined
 function getPageIdentity() {
   return (pageIdentity ??= { id: createClientId(), sequence: 0 })
 }
+// Only successful presence responses acknowledge initialization; failed/aborted opens retry.
 const openedSessions = new Set<string>()

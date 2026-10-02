@@ -8,6 +8,8 @@ import { createUserMessage, type GenerateOptions, type StreamChunk } from '@deep
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as Plugin from '../src/host/index.js'
 import { snapshot } from '../src/host/adapter.js'
+// Use the locked SDK's real projection fold without starting its full Session Controller.
+import { installModelSelectionProjection } from '../node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/model-selection-projection.js'
 import { resolveConfig, type RecapConfig } from '../src/core/config.js'
 import { deferred, flush } from './helpers.js'
 import type { ViewState } from '../src/core/contracts.js'
@@ -136,6 +138,57 @@ describe('real Cordis, Session, Projection and Command services', () => {
     expect(f.stream.mock.calls[0]?.[0]).toMatchObject({
       provider: 'override',
       model: 'small-model',
+    })
+  })
+  it.each([false, true])(
+    'honors pending session model selection without consuming it (override: %s)',
+    async (override) => {
+      const f = await mount(override ? { provider: 'override', model: 'small-model' } : {})
+      installModelSelectionProjection(f.ctx)
+      f.session.append('turn/start', { turn: 2 })
+      f.session.append('step/start', { turn: 2, step: 2 })
+      f.session.append('request/header', {
+        header: { config: { provider: 'previous-provider', model: 'previous-model' } },
+        reason: 'initial',
+      })
+      f.session.append('step/end', { turn: 2, step: 2 })
+      f.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+      const selected = { provider: 'selected-provider', model: 'selected-model' }
+      f.session.append('model/selection', selected)
+      const before = f.ctx.sessionProjections.stateOf(f.session, 'modelSelection')
+      expect(before?.pending).toEqual(selected)
+      await f.command('/recap refresh')
+      await f.ready()
+      expect(f.stream.mock.calls[0]?.[0]).toMatchObject(
+        override ? { provider: 'override', model: 'small-model' } : selected,
+      )
+      expect(f.ctx.sessionProjections.stateOf(f.session, 'modelSelection')).toEqual(before)
+      expect(f.session.requestHeader()?.config).toMatchObject({
+        provider: 'previous-provider',
+        model: 'previous-model',
+      })
+      expect(f.agent.options).toMatchObject({
+        provider: 'session-provider',
+        model: 'session-model',
+      })
+    },
+  )
+  it('uses the historical complete route when no model selection is pending', async () => {
+    const f = await mount()
+    installModelSelectionProjection(f.ctx)
+    f.session.append('turn/start', { turn: 2 })
+    f.session.append('step/start', { turn: 2, step: 2 })
+    f.session.append('request/header', {
+      header: { config: { provider: 'previous-provider', model: 'previous-model' } },
+      reason: 'initial',
+    })
+    f.session.append('step/end', { turn: 2, step: 2 })
+    f.session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
+    await f.command('/recap refresh')
+    await f.ready()
+    expect(f.stream.mock.calls[0]?.[0]).toMatchObject({
+      provider: 'previous-provider',
+      model: 'previous-model',
     })
   })
   it('removes the command and the projection on plugin unload', async () => {
