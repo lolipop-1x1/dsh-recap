@@ -2,10 +2,22 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandDefinitionId, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { RecapConfig } from '../core/config.js'
 import type { RecapEngine } from '../core/engine.js'
-export function installCommand(ctx: Context, engine: RecapEngine, config: () => RecapConfig): void {
+export function installCommand(
+  ctx: Context,
+  engine: RecapEngine,
+  config: () => RecapConfig,
+): () => void {
+  let sync = () => {}
   ctx.inject(['commands'], (child) => {
-    child.effect(() =>
-      child.commands.register({
+    let unregister: (() => void) | undefined
+    sync = () => {
+      if (!config().onCommand) {
+        unregister?.()
+        unregister = undefined
+        return
+      }
+      if (unregister) return
+      unregister = child.commands.register({
         definitionId: 'dsh-recap:recap' as CommandDefinitionId,
         name: 'recap',
         description: '回顾当前会话 / Recap the current session',
@@ -92,7 +104,13 @@ export function installCommand(ctx: Context, engine: RecapEngine, config: () => 
             }
           }
         },
-      }),
-    )
+      })
+    }
+    sync()
+    child.effect(() => () => {
+      unregister?.()
+      sync = () => {}
+    })
   })
+  return () => sync()
 }

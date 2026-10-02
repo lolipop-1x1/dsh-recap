@@ -22,7 +22,18 @@ const copy = {
   generation: ['生成与用量', 'Generation & usage'],
   display: ['展示', 'Display'],
   advanced: ['高级与隐私', 'Advanced & privacy'],
-  save: ['保存设置', 'Save changes'],
+  recapModel: ['回顾使用的模型', 'Recap model'],
+  followModel: ['跟随当前会话模型', 'Follow conversation model'],
+  modelHelp: [
+    '默认使用主模型，也可选择已配置的其他模型来控制用量。',
+    'Use the conversation model, or choose another configured model to control usage.',
+  ],
+  modelError: [
+    '部分模型列表暂时不可用，当前选择保持不变。',
+    'Some models are unavailable; your current selection is unchanged.',
+  ],
+  autoSave: ['修改后自动保存', 'Changes save automatically'],
+  unsaved: ['等待保存…', 'Waiting to save…'],
   saving: ['保存中…', 'Saving…'],
   saved: ['已保存，即时生效', 'Saved; active immediately'],
   reload: ['重新读取', 'Reload'],
@@ -31,10 +42,6 @@ const copy = {
   conflict: [
     '设置已在别处更新。草稿已保留；请重新读取后再修改。',
     'Settings changed elsewhere. Your draft is retained; reload before editing again.',
-  ],
-  privacy: [
-    '默认不改变主模型上下文。模型回顾会使用当前服务商额度；纯事实模式不调用模型。',
-    'Main model context is unchanged by default. Model recaps use provider credits; facts-only mode makes no model calls.',
   ],
   injection: [
     '已开启上下文注入：回顾会成为主模型可见的持久消息。',

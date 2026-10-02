@@ -43,6 +43,19 @@ async function mount() {
       return () => {}
     }
   }
+  const modelRemote = {
+    modelCatalog: async () => ({
+      ok: true,
+      value: {
+        default: { provider: '', model: '' },
+        routableProviders: [],
+        groups: [],
+        failures: [],
+      },
+    }),
+  }
+  ctx.provide('remote', { session: modelRemote })
+  ctx.provide('remote.session', modelRemote)
   await ctx.plugin(Slots)
   await ctx.plugin(Locale)
   onTestFinished(async () => {
@@ -77,7 +90,8 @@ it('mounts the automatic recap only for the latest open turn', async () => {
   const props = {
     sessionId: 'live-session',
     turn: { turn: 3 },
-    useChat: (select: (value: object) => unknown) => select({ timeline: { turnOrder: [1, 2, 3] } }),
+    useChat: (select: (value: object) => unknown) =>
+      select({ timeline: { turnOrder: [1, 2, 3], turns: new Map() }, order: [], nodes: new Map() }),
     useSession: (select: (value: object) => unknown) =>
       select({ blank: false, removed: false, openState: 'open' }),
   }
@@ -133,8 +147,10 @@ it('renders recap command rows in chat instead of the composer dock', async () =
   const old = { seq: 1, name: 'recap', args: '', outcome: { kind: 'success', text: '旧摘要' } }
   const latest = { seq: 2, name: 'recap', args: 'refresh', outcome: null }
   const props = {
+    useSession: () => true,
     useChat: (select: (value: object) => unknown) =>
       select({
+        timeline: { turnOrder: [3], turns: new Map() },
         order: ['old', 'latest'],
         nodes: new Map([
           ['old', { kind: 'command', data: old }],
@@ -142,8 +158,12 @@ it('renders recap command rows in chat instead of the composer dock', async () =
         ]),
       }),
   }
-  expect(renderToStaticMarkup(createElement(component, { ...props, node: old }))).toBe('')
-  expect(renderToStaticMarkup(createElement(component, { ...props, node: latest }))).toBe('')
+  expect(renderToStaticMarkup(createElement(component, { ...props, node: old }))).toBe(
+    '<div data-dshr-command="true"></div>',
+  )
+  expect(renderToStaticMarkup(createElement(component, { ...props, node: latest }))).toBe(
+    '<div data-dshr-command="true"></div>',
+  )
   expect(
     renderToStaticMarkup(
       createElement(component, {
@@ -152,4 +172,35 @@ it('renders recap command rows in chat instead of the composer dock', async () =
       }),
     ),
   ).toContain('命令帮助')
+})
+
+it('places the latest recap after Compact in its command row without a duplicate turn preview', async () => {
+  const f = await mount()
+  const command = { seq: 12, name: 'recap', args: '', outcome: { kind: 'success', text: '已受理' } }
+  const snapshot = {
+    timeline: { turnOrder: [3], turns: new Map([[3, { end: { seq: 10 } }]]) },
+    order: ['compact', 'recap'],
+    nodes: new Map([
+      ['compact', { kind: 'command', data: { seq: 11, name: 'compact' } }],
+      ['recap', { kind: 'command', data: command }],
+    ]),
+  }
+  const props = {
+    sessionId: 'live-session',
+    turn: { turn: 3 },
+    node: command,
+    useChat: (select: (value: object) => unknown) => select(snapshot),
+    useSession: () => true,
+  }
+  const row = f.rows.get('conversation.chat.commandview')?.component as (
+    props: object,
+  ) => ReactElement<{ children: ReactElement<{ turn: number }> | null }> | null
+  const tail = f.rows.get('conversation.chat.turnTail')?.component as (
+    props: object,
+  ) => ReactElement | null
+  expect(row(props)?.props.children?.props.turn).toBe(3)
+  expect(tail(props)).toBeNull()
+  snapshot.timeline.turns.set(3, { end: { seq: 13 } })
+  expect(row(props)?.props.children).toBeNull()
+  expect(tail(props)).not.toBeNull()
 })

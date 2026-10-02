@@ -416,11 +416,11 @@ export class RecapEngine {
       entry.revision++
       if (entry.task && entry.task.language !== this.language(entry, live.facts)) this.cancel(entry)
     }
+    if (message.closed && entry.displayTurn !== null) {
+      entry.displayTurn = null
+      entry.revision++
+    }
     if (!entry.presence.isVisible(this.now())) {
-      if (entry.displayTurn !== null) {
-        entry.displayTurn = null
-        entry.revision++
-      }
       entry.pending = undefined
       if (entry.task?.automatic && entry.task.waiters === 0) this.cancel(entry)
     }
@@ -439,10 +439,6 @@ export class RecapEngine {
     this.syncConfig()
     for (const entry of [...this.entries.values()]) {
       if (!entry.presence.isVisible(this.now())) {
-        if (entry.displayTurn !== null) {
-          entry.displayTurn = null
-          entry.revision++
-        }
         entry.pending = undefined
         if (entry.task?.automatic && entry.task.waiters === 0) this.cancel(entry)
         continue

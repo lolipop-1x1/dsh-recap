@@ -49,11 +49,18 @@ export function apply(ctx: Context, config: LiveConfig): void {
     report,
   })
   const settings = new SettingsBridge(ctx, readConfig)
-  installCommand(ctx, engine, readConfig)
+  const syncCommand = installCommand(ctx, engine, readConfig)
   installRoutes(ctx, engine, settings)
   ctx.effect(() => () => engine.dispose())
   ctx.effect(() => {
-    const timer = setInterval(() => safe(() => engine.tick()), 1000)
+    const timer = setInterval(
+      () =>
+        safe(() => {
+          syncCommand()
+          engine.tick()
+        }),
+      1000,
+    )
     timer.unref()
     return () => clearInterval(timer)
   })

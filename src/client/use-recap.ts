@@ -100,7 +100,6 @@ export function useRecap(api: ApiClient, sessionId: string, language: Language) 
         clientId: identity.current.id,
         sequence: ++identity.current.sequence,
         visible: false,
-        closed: true,
       }).catch(() => undefined)
     }
   }, [api, sessionId, language])

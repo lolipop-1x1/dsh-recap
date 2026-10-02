@@ -47,6 +47,30 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`)
   const banner = page.getByRole('region', { name: '会话回顾' })
   await banner.waitFor({ state: 'visible' })
+  await page.evaluate(() => {
+    const fixture = document.createElement('div')
+    fixture.id = 'command-spacing-fixture'
+    fixture.style.display = 'flex'
+    fixture.style.flexDirection = 'column'
+    fixture.innerHTML =
+      Array.from(
+        { length: 12 },
+        () =>
+          '<div data-chat-flow-kind="command" style="margin-top:6px"><div data-dshr-command="true"></div></div>',
+      ).join('') +
+      '<div data-chat-flow-kind="command" style="margin-top:6px"><div data-dshr-command="true">recap 内容</div></div>' +
+      '<div data-chat-flow-kind="command" style="margin-top:6px">其他命令</div>'
+    document.body.append(fixture)
+  })
+  const commandRows = page.locator('#command-spacing-fixture > div')
+  for (let i = 0; i < 12; i++)
+    assert.equal(await commandRows.nth(i).evaluate((el) => getComputedStyle(el).display), 'none')
+  assert.equal(await commandRows.nth(12).evaluate((el) => getComputedStyle(el).marginTop), '6px')
+  assert.equal(await commandRows.nth(13).evaluate((el) => getComputedStyle(el).display), 'block')
+  await page.locator('#command-spacing-fixture').evaluate((el) => el.remove())
+  checks.push(
+    'Empty recap command rows do not accumulate spacing; visible and other commands retain layout',
+  )
   checks.push('Chinese compact recap renders')
   await mkdir('test-results/screenshots', { recursive: true })
   await banner.screenshot({ path: 'test-results/screenshots/preview-banner.png' })
@@ -82,19 +106,51 @@ try {
   checks.push('Character-bounded recap wraps to the chat width')
   await page.screenshot({ path: 'test-results/screenshots/preview-light.png', fullPage: true })
   await page.getByLabel('几分钟没操作后回顾', { exact: true }).fill('5')
-  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+
   await page.getByText('已保存，即时生效', { exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '重新读取', exact: true }).count(), 0)
-  checks.push('Settings use one primary save action')
+  assert.equal(await page.getByRole('button', { name: '保存设置', exact: true }).count(), 0)
+  assert.equal(await page.getByLabel('生成方式', { exact: true }).count(), 0)
+  checks.push('Settings save automatically without a save button or generation mode')
   const save = await page.evaluate(() =>
     window.recapTest.calls.filter((call) => call.route === 'save-settings').at(-1),
   )
   assert.deepEqual(save.body.patch, { idleMinutes: 5 })
   assert.equal(save.body.revision, 0)
   checks.push('Only changed fields and expected revision are submitted')
+  // 无效数值不发请求，修正后才自动保存。
+  const savesBeforeInvalid = await page.evaluate(
+    () => window.recapTest.calls.filter((c) => c.route === 'save-settings').length,
+  )
+  await page.getByLabel('输出 token 上限', { exact: true }).fill('1')
+  await page.getByRole('alert').waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.recapTest.calls.filter((c) => c.route === 'save-settings').length,
+    ),
+    savesBeforeInvalid,
+  )
+  await page.getByLabel('输出 token 上限', { exact: true }).fill('300')
+  await page.getByText('已保存，即时生效', { exact: true }).waitFor()
+  checks.push('Invalid numeric drafts stay local and valid corrections save automatically')
+  const modelPicker = page.getByLabel('回顾使用的模型', { exact: true })
+  assert.equal(await modelPicker.inputValue(), '')
+  await modelPicker.selectOption({ label: '轻量模型' })
+  await page.getByText('已保存，即时生效', { exact: true }).waitFor()
+  const modelSave = await page.evaluate(() =>
+    window.recapTest.calls.filter((c) => c.route === 'save-settings').at(-1),
+  )
+  assert.deepEqual(modelSave.body.patch, { provider: 'configured', model: 'small' })
+  await modelPicker.selectOption('')
+  await page.getByText('已保存，即时生效', { exact: true }).waitFor()
+  const followSave = await page.evaluate(() =>
+    window.recapTest.calls.filter((c) => c.route === 'save-settings').at(-1),
+  )
+  assert.deepEqual(followSave.body.patch, { provider: '', model: '' })
+  checks.push('Configured models save provider and model together; follow mode clears both')
   await page.evaluate(() => window.recapTest.conflict())
   await page.getByLabel('几分钟没操作后回顾', { exact: true }).fill('17')
-  await page.getByRole('button', { name: '保存设置', exact: true }).click()
+
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByLabel('几分钟没操作后回顾', { exact: true }).inputValue(), '17')
   checks.push('Revision conflict retains the user draft')

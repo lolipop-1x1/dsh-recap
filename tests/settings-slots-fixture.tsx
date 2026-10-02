@@ -137,6 +137,19 @@ globals.startSettingsSlots = async () => {
       }
     }
   }
+  const modelRemote = {
+    modelCatalog: async () => ({
+      ok: true,
+      value: {
+        default: { provider: '', model: '' },
+        routableProviders: [],
+        groups: [],
+        failures: [],
+      },
+    }),
+  }
+  ctx.provide('remote', { session: modelRemote })
+  ctx.provide('remote.session', modelRemote)
   await ctx.plugin(Locale)
   await ctx.plugin(renderer)
   const slots = ctx.slots,

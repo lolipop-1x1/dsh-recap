@@ -52,34 +52,25 @@ export async function runSettingsSlotsRegression() {
     await page.evaluate(() => window.settingsSlotsTest.captureInput())
     checks.push('Source plugin mounts through the real SDK ModuleLoader, SlotCore and Renderer')
 
+    await page.evaluate(() => window.settingsSlotsTest.holdNextSave())
     await input.fill('17')
     await page.evaluate(() => window.settingsSlotsTest.language('en'))
     await page.getByRole('heading', { name: 'Recap', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation').innerText(), 'Recap')
     assert.equal(await input.inputValue(), '17')
-    assert.equal(
-      await page.getByRole('button', { name: 'Save changes', exact: true }).isEnabled(),
-      true,
-    )
     const draft = await state()
     assert.equal(draft.reads, 1)
     assert.equal(draft.sameEntry, true)
     assert.equal(draft.sameInput, true)
     checks.push('Changing locale updates menu copy without replacing the entry or losing the draft')
 
-    await page.evaluate(() => window.settingsSlotsTest.holdNextSave())
-    await page.getByRole('button', { name: 'Save changes', exact: true }).click()
-    await page.getByRole('button', { name: 'Saving…', exact: true }).waitFor()
+    await page.getByText('Saving…', { exact: true }).waitFor()
     await page.waitForFunction(() => window.settingsSlotsTest.snapshot().pending)
     await page.evaluate(() => window.settingsSlotsTest.language('zh-CN'))
     await page.getByRole('heading', { name: '会话回顾', exact: true }).waitFor()
     assert.equal(await page.getByRole('navigation').innerText(), '会话回顾')
     assert.equal(await input.inputValue(), '17')
-    assert.equal(await input.isDisabled(), true)
-    assert.equal(
-      await page.getByRole('button', { name: '保存中…', exact: true }).isDisabled(),
-      true,
-    )
+    assert.equal(await input.isDisabled(), false)
     const saving = await state()
     assert.equal(saving.sameEntry, true)
     assert.equal(saving.sameInput, true)
@@ -88,16 +79,12 @@ export async function runSettingsSlotsRegression() {
     assert.equal(saving.pending, true)
     assert.deepEqual(saving.lastPatch, { idleMinutes: 17 })
     checks.push(
-      'Locale changes preserve the in-flight save, draft, disabled fields and entry identity',
+      'Locale changes preserve the in-flight save, draft, editable fields and entry identity',
     )
 
     await page.evaluate(() => window.settingsSlotsTest.finishSave())
     await page.getByText('已保存，即时生效', { exact: true }).waitFor()
     assert.equal(await input.inputValue(), '17')
-    assert.equal(
-      await page.getByRole('button', { name: '保存设置', exact: true }).isDisabled(),
-      true,
-    )
     const saved = await state()
     assert.equal(saved.value, 17)
     assert.equal(saved.saves, 1)
@@ -105,9 +92,24 @@ export async function runSettingsSlotsRegression() {
     assert.equal(saved.sameInput, true)
     checks.push('The same save completes once and displays confirmation in the new locale')
 
-    await input.fill('19')
+    // 保存期间改回旧值，也必须排队保存，不能被旧响应覆盖。
     await page.evaluate(() => window.settingsSlotsTest.holdNextSave())
-    await page.getByRole('button', { name: '保存设置', exact: true }).click()
+    await input.fill('18')
+    await page.waitForFunction(() => window.settingsSlotsTest.snapshot().pending)
+    await input.fill('17')
+    await page.evaluate(() => window.settingsSlotsTest.finishSave())
+    await page.waitForFunction(
+      () =>
+        window.settingsSlotsTest.snapshot().saves === 3 &&
+        window.settingsSlotsTest.snapshot().value === 17,
+    )
+    assert.equal(await input.inputValue(), '17')
+    checks.push(
+      'Edits during an in-flight save are serialized with the new revision, including reverts',
+    )
+
+    await page.evaluate(() => window.settingsSlotsTest.holdNextSave())
+    await input.fill('19')
     await page.waitForFunction(() => window.settingsSlotsTest.snapshot().pending)
     await page.evaluate(() => window.settingsSlotsTest.unloadPlugin())
     await page.locator('.dshr-settings').waitFor({ state: 'detached' })
@@ -123,7 +125,7 @@ export async function runSettingsSlotsRegression() {
     assert.equal(afterLocale.entries, 0)
     assert.equal(afterLocale.styles, 0)
     assert.equal(afterLocale.reads, 1)
-    assert.equal(afterLocale.saves, 2)
+    assert.equal(afterLocale.saves, 4)
     checks.push(
       'Plugin unload removes slots, styles and the Settings locale subscription, and aborts a pending save',
     )

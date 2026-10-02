@@ -106,6 +106,12 @@ const api = createApi(async (input, init) => {
   else data = engine.state('browser-session')
   return Response.json({ ok: true, data })
 })
+const loadModels = async () => ({
+  default: { provider: 'configured', model: 'main' },
+  routableProviders: ['configured'],
+  groups: [{ id: 'configured', name: '已配置服务商', models: [{ id: 'small', name: '轻量模型' }] }],
+  failures: [],
+})
 const locale = {
   active: () => active,
   subscribe: (listener: () => void) => {
@@ -133,7 +139,7 @@ function App() {
         <RecapView api={api} locale={locale} sessionId="browser-session" turn={7} />
         <textarea aria-label="Conversation input" placeholder="继续之前的工作…" />
         <hr />
-        <Settings api={api} locale={locale} />
+        <Settings api={api} locale={locale} loadModels={loadModels} />
       </main>
     </>
   )

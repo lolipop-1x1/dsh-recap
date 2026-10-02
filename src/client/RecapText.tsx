@@ -24,16 +24,19 @@ export function RecapText({
         aria-controls={id}
         onClick={() => setExpanded(!expanded)}
       >
-        <span className="dshr-recap-prefix" aria-hidden="true">
-          ›recap ·
+        <span className="dshr-recap-icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor">
+            <path d={expanded ? 'M4 6L8 10L12 6' : 'M3 4L7 8L3 12M9 12H13'} />
+          </svg>
         </span>
+        <span className="dshr-recap-prefix" aria-hidden="true">
+          recap
+        </span>
+        <span className="dshr-recap-separator" aria-hidden="true" />
         <span id={id} className="dshr-summary" data-expanded={expanded}>
           {facts && <span className="dshr-kind">{t(language, 'facts')} · </span>}
           {stale && <span className="dshr-kind">{t(language, 'stale')} · </span>}
           {text}
-        </span>
-        <span className="dshr-chevron" aria-hidden="true">
-          {expanded ? '⌃' : '⌄'}
         </span>
       </button>
     </section>

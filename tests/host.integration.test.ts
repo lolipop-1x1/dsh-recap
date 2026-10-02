@@ -204,3 +204,14 @@ it('injects one legal notice only when enabled and preserves the pre-step decisi
   f.session.append('user/message', notice, { surfaceOp: 'append' })
   expect((await fire()).messages).toHaveLength(1)
 })
+
+it('removes disabled commands from discovery and restores one registration when enabled', async () => {
+  const f = await mount({ onCommand: false })
+  expect(f.ctx.commands.find(f.agent, 'recap')).toBeUndefined()
+  f.fiber.update({ ...resolveConfig({}), onCommand: true })
+  await new Promise((resolve) => setTimeout(resolve, 1100))
+  expect(f.ctx.commands.list(f.agent).filter((row) => row.name === 'recap')).toHaveLength(1)
+  f.fiber.update({ ...resolveConfig({}), onCommand: false })
+  await new Promise((resolve) => setTimeout(resolve, 1100))
+  expect(f.ctx.commands.find(f.agent, 'recap')).toBeUndefined()
+})

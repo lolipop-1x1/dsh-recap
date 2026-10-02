@@ -51,5 +51,5 @@ const clientPlugin = registration.factory((id) => {
   return React
 })
 assert.equal(typeof clientPlugin.apply, 'function')
-assert.equal(Array.from(clientPlugin.inject).join(','), 'slots,locale')
+assert.equal(Array.from(clientPlugin.inject).join(','), 'slots,locale,remote,remote.session')
 console.log('Compiled Client ModuleLoader factory executes with host-supplied React.')

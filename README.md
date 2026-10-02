@@ -4,7 +4,7 @@
 
 [简体中文](README.zh-CN.md) · [Configuration](docs/配置说明.md) · [Repository](https://github.com/lolipop-1x1/dsh-recap)
 
-An unofficial current-session recap plugin for **DeepSeek Harness 0.2.0-rc.2**. A quiet `›recap ·` text row in the chat summarizes the task, observed progress and recorded next step. It defaults to a 400-character limit and a three-line preview, with expand/collapse for the full text. It is not cross-session memory and does not modify the main model context by default.
+An unofficial current-session recap plugin for **DeepSeek Harness 0.2.0-rc.2**. A quiet `›recap ·` text row in the chat summarizes the task, observed progress and recorded next step. It defaults to a 160-character limit and a three-line preview, with expand/collapse for the full text. It is not cross-session memory and does not modify the main model context by default.
 
 ## Install
 
@@ -33,9 +33,9 @@ The command acknowledges acceptance immediately, allowing Harness to clear the s
 | Manual `/recap`              | Available     | Bypasses automatic switches and the minimum turn count                   |
 | Current visible session idle | On, 3 minutes | Keyboard, pointer and scroll activity reset the timer; heartbeats do not |
 
-Opening or switching sessions does not generate a recap. Automatic recaps require three meaningful completed turns, a visible loaded top-level session and an idle agent. A busy agent starts a fresh idle period when its turn finishes. Leaving the last visible tab cancels automatic work and hides its temporary result.
+Opening or switching sessions does not generate a recap. Automatic recaps require three meaningful completed turns, a visible loaded top-level session and an idle agent. A busy agent starts a fresh idle period when its turn finishes. Leaving the last visible tab cancels automatic work but preserves completed results.
 
-Manual and automatic results share one expandable text row at the latest turn. They do not accumulate as command cards. Continuing the conversation or switching sessions hides the temporary recap. Command history records acceptance or status, rather than a separate copy of the summary; automatic results add no session event. Model output is one or two short sentences; factual fallback uses recorded tasks without copying the last reply. Earlier tool errors are not presented as unresolved blockers, and a proposed action is not claimed as completed.
+Manual results appear at the latest recap command. Automatic results use the turn tail when no recap command follows the current turn. They do not accumulate as command cards. Starting another turn, refreshing or closing the page hides the temporary recap; blur and heartbeat expiry do not. Command history records acceptance or status, rather than a separate copy of the summary; automatic results add no session event. Model output is one or two short sentences; factual fallback uses recorded tasks without copying the last reply. Earlier tool errors are not presented as unresolved blockers, and a proposed action is not claimed as completed.
 
 ## Privacy, cost and failure behavior
 

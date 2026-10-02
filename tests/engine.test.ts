@@ -312,7 +312,7 @@ it('hides an automatic preview when leaving and does not show it again on openin
   f.add()
   f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
   expect((await f.engine.request('session-1', 'idle')).hidden).toBe(false)
-  f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false })
+  f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false, closed: true })
   const reopened = f.engine.presence('session-1', {
     clientId: 'a',
     sequence: 3,
@@ -328,7 +328,7 @@ describe('cached recap presentation', () => {
     f.add()
     f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
     const first = await f.engine.request('session-1', 'idle')
-    f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false })
+    f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false, closed: true })
     const reopened = f.engine.presence('session-1', {
       clientId: 'a',
       sequence: 3,
@@ -470,4 +470,19 @@ describe('manual promotion of queued automatic work', () => {
     expect(f.generate.mock.calls.map(([facts]) => facts.sessionId)).toEqual(['blocker', 'before'])
     expect(f.engine.inspect()).toMatchObject({ active: 0, queued: 0 })
   })
+})
+
+it('keeps a completed recap through blur and lease expiry until the page closes', async () => {
+  const f = setup()
+  f.add()
+  f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+  const first = await f.engine.request('session-1', 'manual')
+  f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false })
+  expect(f.engine.state('session-1').hidden).toBe(false)
+  await vi.advanceTimersByTimeAsync(60_000)
+  f.engine.tick()
+  expect(f.engine.state('session-1').recap).toEqual(first.recap)
+  expect(f.engine.state('session-1').hidden).toBe(false)
+  f.engine.presence('session-1', { clientId: 'a', sequence: 3, visible: false, closed: true })
+  expect(f.engine.state('session-1').hidden).toBe(true)
 })
