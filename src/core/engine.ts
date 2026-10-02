@@ -416,9 +416,10 @@ export class RecapEngine {
       entry.revision++
       if (entry.task && entry.task.language !== this.language(entry, live.facts)) this.cancel(entry)
     }
-    if (message.closed && entry.displayTurn !== null) {
+    if (message.closed && !entry.presence.isVisible(this.now()) && entry.displayTurn !== null) {
       entry.displayTurn = null
       entry.revision++
+      if (entry.task) this.cancel(entry)
     }
     if (!entry.presence.isVisible(this.now())) {
       entry.pending = undefined

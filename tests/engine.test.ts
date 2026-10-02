@@ -486,3 +486,36 @@ it('keeps a completed recap through blur and lease expiry until the page closes'
   f.engine.presence('session-1', { clientId: 'a', sequence: 3, visible: false, closed: true })
   expect(f.engine.state('session-1').hidden).toBe(true)
 })
+
+it('does not hide a visible tab recap when another tab closes', async () => {
+  const f = setup()
+  f.add()
+  f.engine.presence('session-1', { clientId: 'a', sequence: 1, visible: true })
+  f.engine.presence('session-1', { clientId: 'b', sequence: 1, visible: true })
+  await f.engine.request('session-1', 'manual')
+  f.engine.presence('session-1', { clientId: 'a', sequence: 2, visible: false, closed: true })
+  expect(f.engine.state('session-1').hidden).toBe(false)
+  f.engine.presence('session-1', { clientId: 'b', sequence: 2, visible: false, closed: true })
+  expect(f.engine.state('session-1').hidden).toBe(true)
+})
+
+it('does not resurrect a recap after refreshing during manual generation', async () => {
+  const f = setup()
+  f.add()
+  const wait = deferred<ModelResult>()
+  f.generate.mockImplementationOnce(() => wait.promise)
+  f.engine.presence('session-1', { clientId: 'old-page', sequence: 1, visible: true })
+  const request = f.engine.request('session-1', 'manual')
+  await flush()
+  f.engine.presence('session-1', {
+    clientId: 'old-page',
+    sequence: 2,
+    visible: false,
+    closed: true,
+  })
+  f.engine.presence('session-1', { clientId: 'new-page', sequence: 1, visible: true, open: true })
+  wait.resolve(result('late manual result'))
+  await request
+  expect(f.engine.state('session-1').hidden).toBe(true)
+  expect(f.engine.state('session-1').recap).toBeNull()
+})

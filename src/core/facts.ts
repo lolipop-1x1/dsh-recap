@@ -94,13 +94,23 @@ export function hasFacts(facts: Facts): boolean {
 }
 /** Quote observed evidence; never infer that a plan was completed. */
 export function factualSummary(facts: Facts, language: Language, max: number): string {
+  const completedGoal = facts.goalPhase === 'complete' ? facts.goal : ''
   const work =
-    facts.todos.find((t) => t.status === 'in_progress')?.text || facts.goal || facts.latestRequest
+    facts.todos.find((t) => t.status === 'in_progress')?.text ||
+    (completedGoal ? '' : facts.goal || facts.latestRequest)
   const next = facts.todos.find((t) => t.status === 'pending')?.text
   const parts =
     language === 'zh'
-      ? [work ? `当前任务：${line(work, 200)}` : '', next ? `下一步：${line(next, 90)}` : '']
-      : [work ? `Current task: ${line(work, 200)}` : '', next ? `Next: ${line(next, 90)}` : '']
+      ? [
+          work ? `当前任务：${line(work, 200)}` : '',
+          completedGoal ? `已完成目标：${line(completedGoal, 200)}` : '',
+          next ? `下一步：${line(next, 90)}` : '',
+        ]
+      : [
+          work ? `Current task: ${line(work, 200)}` : '',
+          completedGoal ? `Completed goal: ${line(completedGoal, 200)}` : '',
+          next ? `Next: ${line(next, 90)}` : '',
+        ]
   return line(
     parts.filter(Boolean).join(language === 'zh' ? '；' : '; ') ||
       checkpointSummary(facts, language, max),

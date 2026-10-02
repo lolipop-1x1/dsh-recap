@@ -206,3 +206,16 @@ import { errorCode } from '../src/core/text.js'
 it('never exposes an arbitrary provider exception code', () => {
   expect(errorCode({ code: 'synthetic-private-provider-detail' })).toBe('GENERATION_FAILED')
 })
+
+it('labels completed goals as completed in factual fallback', () => {
+  const f = fixture()
+  const s = f.add()
+  const facts = deriveFacts('s', s.session.state, resolveConfig({}))
+  facts.goal = '实现便签功能'
+  facts.goalPhase = 'complete'
+  facts.latestRequest = '谢谢'
+  expect(factualSummary(facts, 'zh', 400)).toContain('已完成目标：实现便签功能')
+  expect(factualSummary(facts, 'zh', 400)).not.toContain('当前任务：实现便签功能')
+  expect(factualSummary(facts, 'en', 400)).toContain('Completed goal: 实现便签功能')
+  f.engine.dispose()
+})

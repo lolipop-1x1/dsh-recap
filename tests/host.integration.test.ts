@@ -215,3 +215,55 @@ it('removes disabled commands from discovery and restores one registration when 
   await new Promise((resolve) => setTimeout(resolve, 1100))
   expect(f.ctx.commands.find(f.agent, 'recap')).toBeUndefined()
 })
+
+it.each(['max-tokens', 'error', 'aborted', 'tool-calls'])(
+  'does not publish partial model output after %s termination',
+  async (kind) => {
+    const f = await mount()
+    f.stream.mockImplementationOnce(() =>
+      (async function* () {
+        yield { type: 'text-delta', index: 0, text: '不完整的模型输出' } as StreamChunk
+        yield { type: 'finish', reason: { kind } } as StreamChunk
+      })(),
+    )
+    await f.command('/recap')
+    const state = await f.ready()
+    expect(state.recap?.source).toBe('facts')
+    expect(state.recap?.warning).toBe('INCOMPLETE_RESPONSE')
+    expect(state.recap?.text).not.toContain('不完整的模型输出')
+  },
+)
+it.each(['empty', 'exception', 'oversized'])(
+  'falls back safely for %s provider output',
+  async (failure) => {
+    const f = await mount()
+    f.stream.mockImplementationOnce(() =>
+      (async function* () {
+        if (failure === 'exception') throw new Error('PRIVATE_PROVIDER_ERROR')
+        if (failure === 'oversized')
+          yield { type: 'text-delta', index: 0, text: 'x'.repeat(2_000_001) } as StreamChunk
+        yield { type: 'finish', reason: { kind: 'stop' } } as StreamChunk
+      })(),
+    )
+    await f.command('/recap')
+    const state = await f.ready()
+    expect(state.recap?.source).toBe('facts')
+    expect(state.recap?.text).not.toContain('PRIVATE_PROVIDER_ERROR')
+    expect(state.recap?.warning).toBe(
+      { empty: 'EMPTY_RESPONSE', exception: 'GENERATION_FAILED', oversized: 'OUTPUT_TOO_LARGE' }[
+        failure
+      ],
+    )
+  },
+)
+it('forwards the requested language and budgets without tools or main-model mutation', async () => {
+  const f = await mount({ language: 'en', maxTokens: 256, maxSourceChars: 1000 })
+  const before = { ...f.agent.options }
+  await f.command('/recap')
+  await f.ready()
+  const options = f.stream.mock.calls[0]![0]
+  expect(options.system).toContain('English')
+  expect(options.maxTokens).toBe(256)
+  expect(options).not.toHaveProperty('tools')
+  expect(f.agent.options).toEqual(before)
+})
