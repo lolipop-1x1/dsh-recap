@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — Unreleased
+## 0.1.0 — 2026-10-03
 
 Current-session recap plugin for DeepSeek Harness 0.2.0-rc.2.
 
