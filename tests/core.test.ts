@@ -72,6 +72,22 @@ describe('privacy and text limits', () => {
     )
     expect(redact('password="example"')).not.toContain('example')
   })
+  it.each([
+    ['AWS_SECRET_ACCESS_KEY=synthetic-value', 'AWS_SECRET_ACCESS_KEY=[REDACTED]'],
+    ['OPENAI_API_KEY="synthetic-value"', 'OPENAI_API_KEY=[REDACTED]'],
+    ["DATABASE_PASSWORD='synthetic-value'", 'DATABASE_PASSWORD=[REDACTED]'],
+    ['export GOOGLE_CLIENT_SECRET = synthetic-value', 'export GOOGLE_CLIENT_SECRET = [REDACTED]'],
+    ['"AWS_SESSION_TOKEN": "synthetic-value"', '"AWS_SESSION_TOKEN": [REDACTED]'],
+    ['openai-api-key: synthetic-value', 'openai-api-key: [REDACTED]'],
+    ['ACCESS_TOKEN = synthetic-value', 'ACCESS_TOKEN = [REDACTED]'],
+  ])('脱敏带服务商前缀的凭据赋值：%s', (input, expected) => {
+    expect(redact(input)).toBe(expected)
+    expect(redact(expected)).toBe(expected)
+  })
+  it('保留名称相似的非凭据字段', () => {
+    const text = 'token_count=7; secret_name=demo; passwordPolicy=strict'
+    expect(redact(text)).toBe(text)
+  })
   it('is idempotent after redacting assignments', () => {
     const once = redact('token=abc')
     expect(redact(once)).toBe(once)
@@ -160,6 +176,31 @@ describe('incremental factual projection', () => {
   })
 })
 describe('prompt construction', () => {
+  it('近期消息和元数据中的凭据不会进入回顾模型素材', () => {
+    // 使用虚构凭据，验证投影与最终请求素材两处脱敏边界。
+    const config = resolveConfig({})
+    const state = fold(initialState(), {
+      type: 'user/message',
+      seq: 1,
+      time: 1,
+      data: {
+        source: { kind: 'user' },
+        content: [{ type: 'text', text: 'AWS_SECRET_ACCESS_KEY=synthetic-message-value' }],
+      },
+    })
+    const facts = deriveFacts('session-1', state, config, {
+      title: 'OPENAI_API_KEY="synthetic-title-value"',
+    })
+    facts.goal = 'DATABASE_PASSWORD=synthetic-goal-value'
+    const { input } = buildPrompt(facts, config, 'zh')
+    const data = JSON.parse(input)
+    expect(state.messages[0]?.text).toBe('AWS_SECRET_ACCESS_KEY=[REDACTED]')
+    expect(data.latestRequest).toBe('AWS_SECRET_ACCESS_KEY=[REDACTED]')
+    expect(data.recentMessages[0]?.text).toBe('AWS_SECRET_ACCESS_KEY=[REDACTED]')
+    expect(data.title).toBe('OPENAI_API_KEY=[REDACTED]')
+    expect(data.goal).toBe('DATABASE_PASSWORD=[REDACTED]')
+    expect(input).not.toContain('synthetic-')
+  })
   it('does not claim observed replies were completed work', () => {
     const f = fixture()
     const s = f.add()
