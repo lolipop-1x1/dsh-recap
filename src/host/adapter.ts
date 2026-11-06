@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
@@ -7,18 +8,24 @@ import type {} from '@deepseek-ai/dsh-workspace-changes'
 import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import { RecapError, type RecapConfig, type Language } from '../core/config.js'
 import { buildPrompt, deriveFacts, type Facts } from '../core/facts.js'
-import { PROJECTION_KEY, initialState, type FoldState } from '../core/projection.js'
+import type { FoldState } from '../core/projection.js'
 import type { LiveSnapshot, ModelResult } from '../core/contracts.js'
 import { textBlocks } from '../core/text.js'
+// 最低支持 SDK 依赖此类型表；新版从投影注册的泛型推导状态。
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     dshRecapFacts: FoldState
   }
 }
-export function snapshot(ctx: Context, id: string, config: RecapConfig): LiveSnapshot | undefined {
+export function snapshot(
+  ctx: Context,
+  id: string,
+  config: RecapConfig,
+  readFacts: (session: Session) => FoldState,
+): LiveSnapshot | undefined {
   const agent = ctx.agents.get(id as SessionId)
   if (!agent) return undefined
-  const state = ctx.sessionProjections.stateOf(agent.session, PROJECTION_KEY) ?? initialState()
+  const state = readFacts(agent.session)
   const extra = ctx.sessionProjections.snapshot(agent.session, ['todos', 'goal', 'title']).values
   return {
     instance: agent,
@@ -42,12 +49,13 @@ export async function generate(
   const llm = ctx.get('llm')
   if (!agent || !llm)
     throw new RecapError('MODEL_UNAVAILABLE', 'No model service is available.', 503)
-  const pending = ctx.sessionProjections.stateOf(agent.session, 'modelSelection')?.pending
+  const selected = ctx.sessionProjections.snapshot(agent.session, ['modelSelection']).values
+    .modelSelection?.next
   const header = agent.session.requestHeader()?.config
   const route =
     config.provider && config.model
       ? config
-      : (pending ?? (header?.provider && header.model ? header : agent.options))
+      : (selected ?? (header?.provider && header.model ? header : agent.options))
   const { provider, model } = route
   if (!provider || !model)
     throw new RecapError('MODEL_UNAVAILABLE', 'This session has no model route.', 503)
@@ -56,7 +64,7 @@ export async function generate(
   let size = 0,
     chunks = 0,
     completed = false
-  // purpose only admits compaction/session-title in this API. Omit it rather than misclassifying recap calls.
+  // 不冒用宿主其他功能的用途标识，回顾请求保持独立。
   for await (const chunk of llm.stream({
     provider,
     model,

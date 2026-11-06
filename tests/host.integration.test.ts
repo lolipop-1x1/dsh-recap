@@ -6,14 +6,28 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { createUserMessage, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import * as AgentSdk from '@deepseek-ai/dsh-agent'
 import * as Plugin from '../src/host/index.js'
 import { snapshot } from '../src/host/adapter.js'
-// Use the locked SDK's real projection fold without starting its full Session Controller.
-import { installModelSelectionProjection } from '../node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/model-selection-projection.js'
+import { StateSchema, PROJECTION_KEY } from '../src/core/projection.js'
 import { resolveConfig, type RecapConfig } from '../src/core/config.js'
 import { deferred, flush } from './helpers.js'
 import type { ViewState } from '../src/core/contracts.js'
-async function mount(patch: Partial<RecapConfig> = {}) {
+async function installModelSelectionProjection(ctx: Context): Promise<void> {
+  if ('modelSelectionProjectionDefinition' in AgentSdk) {
+    await ctx.sessionProjections.register(AgentSdk.modelSelectionProjectionDefinition)
+    return
+  }
+  // 最低支持版本的模型投影由 Session Controller 提供，按实际 SDK 延迟加载。
+  const legacy = await import(
+    new URL(
+      '../node_modules/@deepseek-ai/dsh-api-session-controller/lib/types/model-selection-projection.js',
+      import.meta.url,
+    ).href
+  )
+  legacy.installModelSelectionProjection(ctx)
+}
+async function mount(patch: Partial<RecapConfig> = {}, beforeMount?: (ctx: Context) => void) {
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
   await ctx.plugin(SessionStore)
@@ -52,6 +66,7 @@ async function mount(patch: Partial<RecapConfig> = {}) {
       },
     },
   } as unknown as Context['connection'])
+  beforeMount?.(ctx)
   const fiber = await ctx.plugin(Plugin, { ...resolveConfig(patch), minTurns: 0 })
   session.append('turn/start', { turn: 1 })
   session.append('step/start', { turn: 1, step: 1 })
@@ -84,6 +99,27 @@ async function mount(patch: Partial<RecapConfig> = {}) {
   return { ctx, agent, session, fiber, stream, command, read, ready }
 }
 describe('real Cordis, Session, Projection and Command services', () => {
+  it('等待投影注册完成后才发布回顾命令', async () => {
+    const ready = deferred<void>()
+    const entered = deferred<Context>()
+    onTestFinished(() => ready.resolve())
+    const mounting = mount({}, (ctx) => {
+      const register = ctx.sessionProjections.register.bind(ctx.sessionProjections)
+      vi.spyOn(ctx.sessionProjections, 'register').mockImplementation((definition) => {
+        const registration = register(definition)
+        return ready.promise.then(() => registration)
+      })
+      entered.resolve(ctx)
+    })
+    const ctx = await entered.promise
+    const agent = ctx.agents.get(SessionId('real-session'))!
+    expect(ctx.commands.find(agent, 'recap')).toBeUndefined()
+    ready.resolve()
+    const f = await mounting
+    expect(f.ctx.commands.find(f.agent, 'recap')).toBeDefined()
+    expect((await f.command('/recap'))?.result.kind).toBe('success')
+    expect((await f.ready()).status).toBe('ready')
+  })
   it('acknowledges a slow recap before model completion and publishes one current result', async () => {
     const f = await mount(),
       wait = deferred<void>()
@@ -144,7 +180,7 @@ describe('real Cordis, Session, Projection and Command services', () => {
     'honors pending session model selection without consuming it (override: %s)',
     async (override) => {
       const f = await mount(override ? { provider: 'override', model: 'small-model' } : {})
-      installModelSelectionProjection(f.ctx)
+      await installModelSelectionProjection(f.ctx)
       f.session.append('turn/start', { turn: 2 })
       f.session.append('step/start', { turn: 2, step: 2 })
       f.session.append('request/header', {
@@ -175,7 +211,7 @@ describe('real Cordis, Session, Projection and Command services', () => {
   )
   it('uses the historical complete route when no model selection is pending', async () => {
     const f = await mount()
-    installModelSelectionProjection(f.ctx)
+    await installModelSelectionProjection(f.ctx)
     f.session.append('turn/start', { turn: 2 })
     f.session.append('step/start', { turn: 2, step: 2 })
     f.session.append('request/header', {
@@ -200,7 +236,9 @@ describe('real Cordis, Session, Projection and Command services', () => {
   })
   it('counts real committed user events through the registered projection', async () => {
     const f = await mount()
-    const view = snapshot(f.ctx, f.agent.id, resolveConfig({}))
+    const view = snapshot(f.ctx, f.agent.id, resolveConfig({}), (session) =>
+      StateSchema.parse(f.ctx.sessionProjections.stateOf(session, PROJECTION_KEY)),
+    )
     expect(view?.facts.latestRequest).toBe('修复权限问题')
     expect(view?.facts.completedTurns).toBe(1)
     expect(view?.facts).not.toHaveProperty('stats')

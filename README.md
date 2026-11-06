@@ -8,9 +8,11 @@
 
 [简体中文](README.zh-CN.md) · [Quick start](#quick-start) · [Commands](#commands) · [Configuration](docs/配置说明.md) · [Report an issue](https://github.com/lolipop-1x1/dsh-recap/issues)
 
-![Harness compatibility](https://img.shields.io/badge/Harness-0.2.0--rc.2-536DFE)
+![Harness compatibility](https://img.shields.io/badge/Harness-%E2%89%A50.2.0--rc.2-536DFE)
 ![Node requirement](https://img.shields.io/badge/Node.js-%E2%89%A522.19-43853D)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+Requires Harness **0.2.0-rc.2 or newer**. Regression checks cover 0.2.0-rc.2 and 0.2.2-rc.1. The version range has no upper bound; future API changes may still require plugin updates.
 
 ## A small reminder, right where you work
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — Unreleased
+
+- 将 DSH 兼容范围放宽为 `>=0.2.0-rc.2`，同时设置 `engines.dsh` 和 DSH LLM peer 范围；开发 SDK 仍精确锁定最低支持版本，并锁定与 SDK 一致的 Zod 版本，避免类型随安装漂移。
+- 修复新版 Cordis 的 fiber 代理引用变化导致设置被误判为只读，保留原生持久化、revision 冲突和并发保护。
+- 等待投影注册后发布功能，兼容旧版同步注册和新版投影句柄；模型路由改读两版共有的公开投影快照。
+- 增加 fiber 代理变化与宿主版本校验回归，并验证最低版本及 0.2.2-rc.1。未来版本允许加载，接口变化仍可能需要适配。
+
 ## 0.1.0 — 2026-10-03
 
 Current-session recap plugin for DeepSeek Harness 0.2.0-rc.2.

@@ -18,7 +18,7 @@ export class SettingsBridge {
     const entry = this.ctx
       .get('configEditor')
       ?.entries()
-      .find((row) => row.fiber === this.ctx.fiber)
+      .find((row) => row.fiber?.ctx === this.ctx)
     return settings && entry
       ? settings.describe().find((row) => row.ns === entry.options.id)
       : undefined

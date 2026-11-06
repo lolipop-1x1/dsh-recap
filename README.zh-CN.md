@@ -8,9 +8,11 @@
 
 [English](README.md) · [快速开始](#快速开始) · [命令](#命令) · [配置说明](docs/配置说明.md) · [反馈问题](https://github.com/lolipop-1x1/dsh-recap/issues)
 
-![Harness 兼容版本](https://img.shields.io/badge/Harness-0.2.0--rc.2-536DFE)
+![Harness 兼容版本](https://img.shields.io/badge/Harness-%E2%89%A50.2.0--rc.2-536DFE)
 ![Node 版本要求](https://img.shields.io/badge/Node.js-%E2%89%A522.19-43853D)
 [![MIT 许可证](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+要求 Harness **0.2.0-rc.2 及以上**。回归覆盖 0.2.0-rc.2 和 0.2.2-rc.1；版本声明不设上限，后续若有接口破坏性变更，仍可能需要适配。
 
 ## 不必从头翻一遍对话
 

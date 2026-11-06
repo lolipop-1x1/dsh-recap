@@ -1,4 +1,4 @@
-import { describe, it, expect, onTestFinished } from 'vitest'
+import { describe, it, expect, onTestFinished, vi } from 'vitest'
 import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -84,9 +84,27 @@ async function mount() {
       'recap-probe': probe,
     })
   })
-  return { bridge, profile, mounts: () => mounts }
+  return { ctx, bridge, profile, mounts: () => mounts }
 }
 describe('real Harness configuration integration (isolated profile)', () => {
+  it('同一插件的 fiber 代理变化后仍能保存设置', async () => {
+    const f = await mount()
+    const editor = f.ctx.get('configEditor')!
+    const entries = editor.entries()
+    const spy = vi.spyOn(editor, 'entries').mockReturnValue(
+      entries.map((row) => ({
+        ...row,
+        fiber: row.fiber ? new Proxy(row.fiber, {}) : undefined,
+      })),
+    )
+    onTestFinished(() => spy.mockRestore())
+    const before = f.bridge.read()
+    expect(before.writable).toBe(true)
+    expect(before.namespace).toBe('renamed-recap')
+    const after = await f.bridge.save({ idleMinutes: 9 }, before.revision!)
+    expect(after.config.idleMinutes).toBe(9)
+    expect(readFileSync(f.profile.patchPath, 'utf8')).toContain('idleMinutes: 9')
+  })
   it('finds a renamed entry and applies a durable live edit without remounting', async () => {
     const f = await mount(),
       before = f.bridge.read()

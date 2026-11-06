@@ -1,8 +1,15 @@
 import type { Context } from '@deepseek-ai/cordis'
+import type { Session } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, boundContextSummary, type ContextFormed } from '@deepseek-ai/dsh-llm'
 import { resolveConfig } from '../core/config.js'
-import { StateSchema, PROJECTION_KEY, fold, initialState } from '../core/projection.js'
+import {
+  StateSchema,
+  PROJECTION_KEY,
+  fold,
+  initialState,
+  type FoldState,
+} from '../core/projection.js'
 import { RecapEngine } from '../core/engine.js'
 import { snapshot, generate } from './adapter.js'
 import { installRoutes } from './http.js'
@@ -18,7 +25,7 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 /** All registrations belong to this plugin fiber; no live profile edits are performed here. */
-export function apply(ctx: Context, config: LiveConfig): void {
+export async function apply(ctx: Context, config: LiveConfig): Promise<void> {
   const readConfig = () => resolveConfig(config.get())
   readConfig()
   const warnings = new Map<string, number>()
@@ -35,16 +42,23 @@ export function apply(ctx: Context, config: LiveConfig): void {
       report('BACKGROUND_UNAVAILABLE')
     }
   }
-  ctx.sessionProjections.register({
+  const projection = await ctx.sessionProjections.register<typeof PROJECTION_KEY, FoldState>({
     key: PROJECTION_KEY,
     stateVersion: 1,
     stateSchema: StateSchema,
     init: () => initialState(),
     apply: (state, event) => fold(state, event),
   })
+  // 新版等待注册后使用句柄；最低支持版本返回同步清理函数，仍由所属 fiber 管理。
+  const readFacts = (session: Session): FoldState =>
+    StateSchema.parse(
+      'stateOf' in projection && typeof projection.stateOf === 'function'
+        ? projection.stateOf(session)
+        : (ctx.sessionProjections.stateOf(session, PROJECTION_KEY) ?? initialState()),
+    )
   const engine = new RecapEngine({
     config: readConfig,
-    snapshot: (id, cfg) => snapshot(ctx, id, cfg),
+    snapshot: (id, cfg) => snapshot(ctx, id, cfg, readFacts),
     generate: (facts, cfg, language, signal) => generate(ctx, facts, cfg, language, signal),
     report,
   })
